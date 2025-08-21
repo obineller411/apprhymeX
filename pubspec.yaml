@@ -2,7 +2,7 @@ name: app_rhyme
 description: "A Powerfull CrossPlatform Music App"
 publish_to: "none"
 
-version: 1.0.9
+version: 1.0.0
 
 environment:
   sdk: ">=3.3.4 <4.0.0"
@@ -29,7 +29,6 @@ dependencies:
   flutter_lyric:
     git: https://github.com/canxin121/flutter_lyric
   talker: ^4.1.5
-  just_audio_background: ^0.0.1-beta.11
   audio_session: ^0.1.19
   talker_flutter: ^4.1.5
   pull_down_button: ^0.9.4

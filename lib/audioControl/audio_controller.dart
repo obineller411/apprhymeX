@@ -8,7 +8,6 @@ import 'package:app_rhyme/utils/time_parser.dart';
 import 'package:app_rhyme/utils/network_stability_helper.dart';
 import 'package:get/get.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:just_audio_background/just_audio_background.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
@@ -29,53 +28,33 @@ Future<void> initGlobalAudioHandler() async {
     );
   }
 
-  // 测试后windows上，just_audio_background会导致播放异常，不使用表现反而更加正常
-  if (!Platform.isWindows) {
-    // 在Android平台上，先尝试使用AudioService
-    // 如果AudioService失败，再使用JustAudioBackground
-    bool audioServiceSuccess = false;
-    
-    if (Platform.isAndroid) {
-      try {
-        // 检查是否已经初始化过AudioService
-        // 如果已经存在CustomAudioHandler实例，说明已经初始化过了
-        if (globalCustomAudioHandler != null) {
-          globalTalker.info('[Audio Service] 已经初始化过，跳过初始化');
-          audioServiceSuccess = true;
-        } else {
-          globalCustomAudioHandler = CustomAudioHandler();
-          await AudioService.init(
-            builder: () => globalCustomAudioHandler!,
-            config: const AudioServiceConfig(
-              androidNotificationChannelId: 'com.ryanheise.bg_demo.channel.audio',
-              androidNotificationChannelName: 'Audio playback',
-              androidNotificationOngoing: false,
-              androidStopForegroundOnPause: true,
-              notificationColor: Color(0xFF2196F3),
-              androidNotificationIcon: 'mipmap/ic_launcher',
-            ),
-          );
-          audioServiceSuccess = true;
-          globalTalker.info('[Audio Service] 初始化成功');
-        }
-      } catch (e) {
-        // 如果初始化失败，说明可能已经初始化过了
-        globalTalker.info('[Audio Service] 初始化失败，使用JustAudioBackground: $e');
-        // 清理失败的实例
-        globalCustomAudioHandler = null;
+  // 在Android平台上使用AudioService
+  if (Platform.isAndroid) {
+    try {
+      // 检查是否已经初始化过AudioService
+      // 如果已经存在CustomAudioHandler实例，说明已经初始化过了
+      if (globalCustomAudioHandler != null) {
+        globalTalker.info('[Audio Service] 已经初始化过，跳过初始化');
+      } else {
+        globalCustomAudioHandler = CustomAudioHandler();
+        await AudioService.init(
+          builder: () => globalCustomAudioHandler!,
+          config: const AudioServiceConfig(
+            androidNotificationChannelId: 'com.ryanheise.bg_demo.channel.audio',
+            androidNotificationChannelName: 'Audio playback',
+            androidNotificationOngoing: false,
+            androidStopForegroundOnPause: true,
+            notificationColor: Color(0xFF2196F3),
+            androidNotificationIcon: 'mipmap/ic_launcher',
+          ),
+        );
+        globalTalker.info('[Audio Service] 初始化成功');
       }
-    }
-    
-    // 如果AudioService初始化失败或者不是Android平台，使用JustAudioBackground
-    if (!audioServiceSuccess) {
-      await JustAudioBackground.init(
-        androidNotificationChannelId: 'com.ryanheise.bg_demo.channel.audio',
-        androidNotificationChannelName: 'Audio playback',
-        androidNotificationOngoing: false,
-        androidStopForegroundOnPause: true,
-        notificationColor: const Color(0xFF2196F3),
-        androidNotificationIcon: 'mipmap/ic_launcher',
-      );
+    } catch (e) {
+      // 如果初始化失败，说明可能已经初始化过了
+      globalTalker.info('[Audio Service] 初始化失败: $e');
+      // 清理失败的实例
+      globalCustomAudioHandler = null;
     }
   }
 
@@ -83,8 +62,7 @@ Future<void> initGlobalAudioHandler() async {
   final session = await AudioSession.instance;
   await session.configure(const AudioSessionConfiguration.music());
 
-  // AudioService的初始化已经在上面的JustAudioBackground初始化中处理了
-  // 这里不再重复初始化
+  // 初始化全局音频处理器
   globalAudioHandler = AudioHandler();
 }
 
@@ -147,10 +125,10 @@ class AudioHandler extends GetxController {
             MediaControl.skipToNext,
           ],
           systemActions: const {
-            // 移除所有进度条相关的操作
-            // 不包含 MediaAction.seek
-            // 不包含 MediaAction.seekForward
-            // 不包含 MediaAction.seekBackward
+            // 只展示同步进度，不启用拖动按钮
+            // MediaAction.seek,
+            // MediaAction.seekForward,
+            // MediaAction.seekBackward,
           },
           androidCompactActionIndices: const [0, 1, 2],
           processingState: const {
@@ -528,12 +506,7 @@ class AudioHandler extends GetxController {
       newMusic = null;
     }
     
-    // 防止重复更新相同的音乐，避免图片闪烁
-    if (newMusic == playingMusic.value) {
-      return;
-    }
-    
-    // 只有在音乐真正改变时才更新UI
+    // 允许更新相同的音乐，确保时长信息能正确更新
     playingMusic.value = newMusic;
     
     // 同步到 CustomAudioHandler
@@ -543,13 +516,34 @@ class AudioHandler extends GetxController {
         artUri = Uri.parse(playingMusic.value!.info.artPic!);
       }
       
+      // 获取实际播放的时长
+      Duration? duration;
+      if (player.duration != null) {
+        duration = player.duration;
+      } else if (playingMusic.value!.info.duration != null) {
+        duration = Duration(milliseconds: playingMusic.value!.info.duration as int);
+      }
+      
       globalCustomAudioHandler!.mediaItem.add(MediaItem(
         id: playingMusic.value!.extra ?? 'unknown',
         title: playingMusic.value!.info.name,
         artist: playingMusic.value!.info.artist.toString(),
-        duration: playingMusic.value!.info.duration != null ? Duration(milliseconds: playingMusic.value!.info.duration as int) : null,
+        duration: duration,
         artUri: artUri,
       ));
+      
+      // 添加时长变化监听器，确保通知栏时长能实时更新
+      player.durationStream.listen((newDuration) {
+        if (newDuration != null && globalCustomAudioHandler != null && playingMusic.value != null) {
+          globalCustomAudioHandler!.mediaItem.add(MediaItem(
+            id: playingMusic.value!.extra ?? 'unknown',
+            title: playingMusic.value!.info.name,
+            artist: playingMusic.value!.info.artist.toString(),
+            duration: newDuration,
+            artUri: artUri,
+          ));
+        }
+      });
     }
     
     globalTalker.info(
@@ -635,15 +629,13 @@ class CustomAudioHandler extends BaseAudioHandler {
       playbackState.add(_transformEvent(event));
     });
 
-    // 监听媒体项目变化
-    _player.sequenceStateStream.listen((state) {
-      if (state?.sequence.isNotEmpty ?? false) {
-        final currentItem = state?.currentSource;
-        if (currentItem != null) {
-          mediaItem.add(_transformMediaItem(currentItem));
-        }
+    // 监听时长变化，直接更新mediaItem的duration
+    _player.durationStream.listen((duration) {
+      if (mediaItem.value != null && duration != null) {
+        mediaItem.add(mediaItem.value!.copyWith(duration: duration));
       }
     });
+
   }
 
   // 转换播放状态
@@ -657,10 +649,10 @@ class CustomAudioHandler extends BaseAudioHandler {
         // 不包含 MediaControl.stop
       ],
       systemActions: const {
-        // 移除所有进度条相关的操作
-        // 不包含 MediaAction.seek
-        // 不包含 MediaAction.seekForward
-        // 不包含 MediaAction.seekBackward
+        // 只展示同步进度，不启用拖动按钮
+        // MediaAction.seek,
+        // MediaAction.seekForward,
+        // MediaAction.seekBackward,
         // 不包含 MediaAction.stop
       },
       androidCompactActionIndices: const [0, 1, 2],
@@ -679,33 +671,6 @@ class CustomAudioHandler extends BaseAudioHandler {
     );
   }
 
-  // 转换媒体项目
-  MediaItem _transformMediaItem(AudioSource source) {
-    // 从全局 AudioHandler 获取当前播放的音乐信息
-    if (globalAudioHandler.playingMusic.value != null) {
-      final music = globalAudioHandler.playingMusic.value!;
-      Uri? artUri;
-      if (music.info.artPic != null) {
-        artUri = Uri.parse(music.info.artPic!);
-      }
-      
-      return MediaItem(
-        id: music.extra ?? 'unknown',
-        title: music.info.name,
-        artist: music.info.artist.toString(),
-        duration: music.info.duration != null ? Duration(milliseconds: music.info.duration as int) : null,
-        artUri: artUri,
-      );
-    }
-    
-    return const MediaItem(
-      id: 'unknown',
-      title: 'Unknown',
-      artist: 'Unknown Artist',
-      duration: null,
-      artUri: null,
-    );
-  }
 
   @override
   Future<void> play() async {
@@ -723,9 +688,11 @@ class CustomAudioHandler extends BaseAudioHandler {
 
   @override
   Future<void> seek(Duration position) async {
-    // 同时控制主要的 AudioHandler
+    // 先控制主要的 AudioHandler
     await globalAudioHandler.seek(position);
+    // 然后控制自定义播放器
     await _player.seek(position);
+    // 注意：不要在这里手动更新 mediaItem，让播放器的监听器自动处理
   }
 
   @override
