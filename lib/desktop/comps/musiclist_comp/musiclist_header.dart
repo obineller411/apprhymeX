@@ -48,151 +48,105 @@ class MusicListHeader extends StatelessWidget {
               right: 30,
             ),
             margin: const EdgeInsets.all(10),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(5.0),
-              child: imageCacheHelper(musicListInfo.artPic,
-                  cacheNow: globalConfig.savePicWhenAddMusicList,
-                  width: 250,
-                  height: 250),
-            ),
-          ),
-          // 歌单信息
-          SizedBox(
-            width: screenWidth * 0.3,
-            height: 250,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.end,
+            child: Stack(
               children: [
-                Text(
-                  musicListInfo.name,
-                  textAlign: TextAlign.left,
-                  style: TextStyle(
-                          color: isDarkMode
-                              ? CupertinoColors.white
-                              : CupertinoColors.black,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold)
-                      .useSystemChineseFont(),
-                  overflow: TextOverflow.ellipsis,
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(5.0),
+                  child: imageCacheHelper(musicListInfo.artPic,
+                      cacheNow: globalConfig.savePicWhenAddMusicList,
+                      width: 250,
+                      height: 250),
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  musicListInfo.desc,
-                  maxLines: 4,
-                  textAlign: TextAlign.left,
-                  style: TextStyle(
-                          color: isDarkMode
-                              ? CupertinoColors.white
-                              : CupertinoColors.black,
-                          fontSize: 14)
-                      .useSystemChineseFont(),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 30),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
-                    buildButton(context,
-                        icon: CupertinoIcons.play_fill,
-                        label: "播放", onPressed: () async {
-                      if (musicContainers != null) {
-                        await globalAudioHandler
-                            .clearReplaceMusicAll(musicContainers!);
-                      } else {
-                        await fetchAllMusicAggregators!();
-                        await globalAudioHandler.clearReplaceMusicAll(
-                            pagingController!.itemList!
-                                .map((e) => MusicContainer(e))
-                                .toList());
-                      }
-                    }),
-                    const SizedBox(width: 10),
-                    buildButton(context,
-                        icon: CupertinoIcons.shuffle,
-                        label: "随机播放", onPressed: () async {
-                      if (musicContainers != null) {
-                        await globalAudioHandler.clearReplaceMusicAll(
-                            shuffleList(musicContainers!));
-                      } else {
-                        await fetchAllMusicAggregators!();
-                        await globalAudioHandler.clearReplaceMusicAll(
-                            shuffleList(pagingController!.itemList!
-                                .map((e) => MusicContainer(e))
-                                .toList()));
-                      }
-                    }),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: Padding(
-                padding: const EdgeInsets.only(
-                  right: 10,
-                  top: 250 - 20,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    if (musicContainers != null)
-                      CupertinoButton(
+                Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: DesktopLocalMusicListChoicMenu(
+                      builder: (context, showMenu) => CupertinoButton(
                           padding: EdgeInsets.zero,
-                          child: Icon(
-                            CupertinoIcons.pencil,
-                            color: activeIconRed,
-                            size: 20,
-                          ),
-                          onPressed: () async {
-                            editMusicListInfo(context, musicList);
-                          }),
-                    if (musicContainers != null)
-                      CupertinoButton(
-                          padding: EdgeInsets.zero,
-                          child: Icon(
-                            CupertinoIcons.arrow_down,
-                            color: activeIconRed,
-                            size: 20,
-                          ),
-                          onPressed: () async {
-                            bool confirm = (await showConfirmationDialog(
-                                    context, "确定要缓存所有音乐吗?")) ??
-                                false;
-                            if (!confirm) return;
-                            for (var musicContainer in musicContainers!) {
-                              await cacheMusic(musicContainer);
-                            }
-                          }),
-                    if (musicContainers == null)
-                      GestureDetector(
-                          onTapDown: (details) {
-                            Rect position = Rect.fromPoints(
-                              details.globalPosition,
-                              details.globalPosition,
-                            );
-                            showMusicListMenu(
-                                context, musicList, true, position);
-                          },
+                          onPressed: showMenu,
                           child: Icon(
                             CupertinoIcons.ellipsis,
                             color: activeIconRed,
                             size: 20,
                           )),
-                    if (musicContainers != null)
-                      DesktopLocalMusicListChoicMenu(
-                          builder: (context, showMenu) => CupertinoButton(
-                              padding: EdgeInsets.zero,
-                              onPressed: showMenu,
-                              child: Icon(
-                                CupertinoIcons.ellipsis,
-                                color: activeIconRed,
-                                size: 20,
-                              )),
-                          musicList: musicList,
-                          musicContainers: musicContainers!)
-                  ],
-                )),
+                      musicList: musicList,
+                      musicContainers: musicContainers),
+                ),
+              ],
+            ),
+          ),
+          // 歌单信息
+          Expanded(
+            child: SizedBox(
+              width: screenWidth * 0.3,
+              height: 250,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text(
+                    musicListInfo.name,
+                    textAlign: TextAlign.left,
+                    style: TextStyle(
+                            color: isDarkMode
+                                ? CupertinoColors.white
+                                : CupertinoColors.black,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold)
+                        .useSystemChineseFont(),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    musicListInfo.desc,
+                    maxLines: 4,
+                    textAlign: TextAlign.left,
+                    style: TextStyle(
+                            color: isDarkMode
+                                ? CupertinoColors.white
+                                : CupertinoColors.black,
+                            fontSize: 14)
+                        .useSystemChineseFont(),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 30),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    children: [
+                      buildButton(context,
+                          icon: CupertinoIcons.play_fill,
+                          label: "播放", onPressed: () async {
+                        if (musicContainers != null) {
+                          await globalAudioHandler
+                              .clearReplaceMusicAll(musicContainers!);
+                        } else {
+                          await fetchAllMusicAggregators!();
+                          await globalAudioHandler.clearReplaceMusicAll(
+                              pagingController!.itemList!
+                                  .map((e) => MusicContainer(e))
+                                  .toList());
+                        }
+                      }),
+                      const SizedBox(width: 10),
+                      buildButton(context,
+                          icon: CupertinoIcons.shuffle,
+                          label: "随机播放", onPressed: () async {
+                        if (musicContainers != null) {
+                          await globalAudioHandler.clearReplaceMusicAll(
+                              shuffleList(musicContainers!));
+                        } else {
+                          await fetchAllMusicAggregators!();
+                          await globalAudioHandler.clearReplaceMusicAll(
+                              shuffleList(pagingController!.itemList!
+                                  .map((e) => MusicContainer(e))
+                                  .toList()));
+                        }
+                      }),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -206,77 +160,101 @@ class DesktopLocalMusicListChoicMenu extends StatelessWidget {
     super.key,
     required this.builder,
     required this.musicList,
-    required this.musicContainers,
+    this.musicContainers,
   });
 
   final PullDownMenuButtonBuilder builder;
   final MusicListW musicList;
-  final List<MusicContainer> musicContainers;
+  final List<MusicContainer>? musicContainers;
 
   @override
   Widget build(BuildContext context) {
     MusicListInfo musicListInfo = musicList.getMusiclistInfo();
 
     return PullDownButton(
-      itemBuilder: (context) => [
-        PullDownMenuHeader(
-          itemTheme: PullDownMenuItemTheme(
-              textStyle: const TextStyle().useSystemChineseFont()),
-          leading: imageCacheHelper(musicListInfo.artPic),
-          title: musicListInfo.name,
-          subtitle: musicListInfo.desc,
-        ),
-        const PullDownMenuDivider.large(),
-        ...localMusiclistItems(context, musicList),
-        PullDownMenuItem(
-          itemTheme: PullDownMenuItemTheme(
-              textStyle: const TextStyle().useSystemChineseFont()),
-          onTap: () async {
-            for (var musicContainer in musicContainers) {
-              await cacheMusic(musicContainer);
-            }
-          },
-          title: '缓存歌单所有音乐',
-          icon: CupertinoIcons.cloud_download,
-        ),
-        PullDownMenuItem(
-          itemTheme: PullDownMenuItemTheme(
-              textStyle: const TextStyle().useSystemChineseFont()),
-          onTap: () async {
-            for (var musicContainer in musicContainers) {
-              await delMusicCache(musicContainer, showToast: false);
-            }
-            LogToast.success("删除所有音乐缓存", "删除所有音乐缓存成功",
-                "[LocalMusicListChoicMenu] Successfully deleted all music caches");
-          },
-          title: '删除所有音乐缓存',
-          icon: CupertinoIcons.delete,
-        ),
-        PullDownMenuItem(
-          itemTheme: PullDownMenuItemTheme(
-              textStyle: const TextStyle().useSystemChineseFont()),
-          onTap: () {
-            globalNavigatorToPage(DesktopReorderLocalMusicListPage(
-              musicContainers: musicContainers,
-              musicList: musicList,
-            ));
-          },
-          title: "手动排序",
-          icon: CupertinoIcons.sort_up_circle,
-        ),
-        PullDownMenuItem(
-          itemTheme: PullDownMenuItemTheme(
-              textStyle: const TextStyle().useSystemChineseFont()),
-          onTap: () {
-            globalNavigatorToPage(DesktopMutiSelectMusicContainerListPage(
-              musicList: musicList,
-              musicContainers: musicContainers,
-            ));
-          },
-          title: "多选操作",
-          icon: CupertinoIcons.selection_pin_in_out,
-        )
-      ],
+      itemBuilder: (context) {
+        List<PullDownMenuEntry> items = [
+          PullDownMenuHeader(
+            itemTheme: PullDownMenuItemTheme(
+                textStyle: const TextStyle().useSystemChineseFont()),
+            leading: imageCacheHelper(musicListInfo.artPic),
+            title: musicListInfo.name,
+            subtitle: musicListInfo.desc,
+          ),
+          const PullDownMenuDivider.large(),
+        ];
+
+        if (musicContainers != null) {
+          // 本地歌单的菜单项
+          items.addAll([
+            PullDownMenuItem(
+              itemTheme: PullDownMenuItemTheme(
+                  textStyle: const TextStyle().useSystemChineseFont()),
+              onTap: () async {
+                editMusicListInfo(context, musicList);
+              },
+              title: '编辑信息',
+              icon: CupertinoIcons.pencil,
+            ),
+            PullDownMenuItem(
+              itemTheme: PullDownMenuItemTheme(
+                  textStyle: const TextStyle().useSystemChineseFont()),
+              onTap: () async {
+                bool confirm = (await showConfirmationDialog(
+                        context, "确定要缓存所有音乐吗?")) ??
+                    false;
+                if (!confirm) return;
+                for (var musicContainer in musicContainers!) {
+                  await cacheMusic(musicContainer);
+                }
+              },
+              title: '缓存歌单所有音乐',
+              icon: CupertinoIcons.cloud_download,
+            ),
+            PullDownMenuItem(
+              itemTheme: PullDownMenuItemTheme(
+                  textStyle: const TextStyle().useSystemChineseFont()),
+              onTap: () async {
+                for (var musicContainer in musicContainers!) {
+                  await delMusicCache(musicContainer, showToast: false);
+                }
+                LogToast.success("删除所有音乐缓存", "删除所有音乐缓存成功",
+                    "[LocalMusicListChoicMenu] Successfully deleted all music caches");
+              },
+              title: '删除所有音乐缓存',
+              icon: CupertinoIcons.delete,
+            ),
+            PullDownMenuItem(
+              itemTheme: PullDownMenuItemTheme(
+                  textStyle: const TextStyle().useSystemChineseFont()),
+              onTap: () {
+                globalNavigatorToPage(DesktopReorderLocalMusicListPage(
+                  musicContainers: musicContainers!,
+                  musicList: musicList,
+                ));
+              },
+              title: "手动排序",
+              icon: CupertinoIcons.sort_up_circle,
+            ),
+            PullDownMenuItem(
+              itemTheme: PullDownMenuItemTheme(
+                  textStyle: const TextStyle().useSystemChineseFont()),
+              onTap: () {
+                globalNavigatorToPage(DesktopMutiSelectMusicContainerListPage(
+                  musicList: musicList,
+                  musicContainers: musicContainers!,
+                ));
+              },
+              title: "多选操作",
+              icon: CupertinoIcons.selection_pin_in_out,
+            )
+          ]);
+        } else {
+          // 在线歌单的菜单项 (使用原有的showMusicListMenu逻辑)
+          items.addAll(onlineMusicListItems(context, musicList));
+        }
+        return items;
+      },
       buttonBuilder: builder,
     );
   }

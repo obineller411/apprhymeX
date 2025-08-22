@@ -71,14 +71,14 @@ Future<void> _initDesktopModeEarly() async {
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
-    globalTalker.info('[Main] 早期检测到桌面模式，已设置为横屏');
+    globalTalker.info('[Main] 检测到桌面模式，已设置为横屏');
   } else {
     // 移动模式：锁定竖屏
     await SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
-    globalTalker.info('[Main] 早期检测到移动模式，已设置为竖屏');
+    globalTalker.info('[Main] 检测到移动模式，已设置为竖屏');
   }
 }
 

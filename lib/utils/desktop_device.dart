@@ -8,8 +8,8 @@ Future<void> initDesktopWindowSetting() async {
   if (Platform.isMacOS || Platform.isLinux || Platform.isWindows) {
     doWhenWindowReady(() {
       appWindow
-        ..size = const Size(1280, 860)
-        ..minSize = const Size(1100, 600)
+        ..size = const Size(900, 600)
+        ..minSize = const Size(800, 500)
         ..alignment = Alignment.center
         ..show();
     });

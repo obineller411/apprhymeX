@@ -232,7 +232,6 @@ class ControlBarState extends State<ControlBar> {
                             isDarkMode: isDarkMode,
                           ),
                         ),
-                        if (isDesktop_) WindowButtons(isDarkMode: isDarkMode),
                       ],
                     ),
                   ),
