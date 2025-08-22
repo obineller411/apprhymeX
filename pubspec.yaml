@@ -2,7 +2,7 @@ name: app_rhyme
 description: "A Powerfull CrossPlatform Music App"
 publish_to: "none"
 
-version: 1.0.0
+version: 1.0.1
 
 environment:
   sdk: ">=3.3.4 <4.0.0"
@@ -56,6 +56,7 @@ dependencies:
   reorderables: ^0.6.0
   flutter_keyboard_visibility: ^6.0.0
   bitsdojo_window: ^0.1.6
+  get_storage: ^2.1.1
 
 
 dev_dependencies:
@@ -84,20 +85,6 @@ package_rename_config:
     app_name: AppRhymeX
     package_name: com.obineller411.apprhymex
 
-  # ios:
-  #   app_name: AppRhymeX
-  #   bundle_name: AppRhymeX
-  #   package_name: com.obineller411.apprhymex
-
-  # linux:
-  #   app_name: AppRhymeX
-  #   package_name: com.obineller411.apprhymex
-  #   exe_name: AppRhymeX
-
-  # macos:
-  #   app_name: AppRhymeX
-  #   package_name: com.obineller411.apprhymex
-  #   copyright_notice: Copyright ©️ 2024 obineller411. All rights reserved.
 
   windows:
     app_name: AppRhymeX

@@ -144,7 +144,7 @@ class PlaylistPopupRoute extends PopupRoute<void> {
   });
 
   @override
-  Color? get barrierColor => Colors.black54;
+  Color? get barrierColor => null;
 
   @override
   bool get barrierDismissible => true;
@@ -163,14 +163,35 @@ class PlaylistPopupRoute extends PopupRoute<void> {
   ) {
     const containerWidth = 350.0;
 
-    return FadeTransition(
-      opacity: animation,
-      child: Align(
-        alignment: Alignment.centerRight,
-        child: PlaylistContainer(
-          maxHeight: maxHeight,
-          isDarkMode: isDarkMode,
-          width: containerWidth,
+    return SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(1.0, 0.0),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+      )),
+      child: FadeTransition(
+        opacity: animation,
+        child: Align(
+          alignment: Alignment.centerRight,
+          child: Container(
+            decoration: const BoxDecoration(
+              boxShadow: [
+                BoxShadow(
+                  color: Color.fromARGB(100, 0, 0, 0),
+                  blurRadius: 15.0,
+                  spreadRadius: 0,
+                  offset: Offset(-8, 0),
+                ),
+              ],
+            ),
+            child: PlaylistContainer(
+              maxHeight: maxHeight,
+              isDarkMode: isDarkMode,
+              width: containerWidth,
+            ),
+          ),
         ),
       ),
     );

@@ -7,6 +7,8 @@ import 'package:app_rhyme/utils/chore.dart';
 import 'package:app_rhyme/src/rust/api/types/config.dart';
 import 'package:app_rhyme/utils/mobile_device.dart';
 import 'package:app_rhyme/utils/miui_gesture_adapter.dart';
+import 'package:get/get.dart';
+import 'package:get_storage/get_storage.dart';
 import 'package:chinese_font_library/chinese_font_library.dart';
 import 'package:app_rhyme/audioControl/audio_controller.dart';
 import 'package:app_rhyme/src/rust/frb_generated.dart';
@@ -18,10 +20,25 @@ import 'package:app_rhyme/utils/network_stability_helper.dart';
 import 'package:app_rhyme/utils/quality_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // 优先初始化存储以检测桌面模式
+  await GetStorage.init();
+  
+  // 早期检测和设置桌面模式屏幕方向
+  await _initDesktopModeEarly();
+  
+  // 配置系统导航条透明化
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarDividerColor: Colors.transparent,
+    statusBarColor: Colors.transparent,
+  ));
+  
   await RustLib.init();
   await initGlobalVars();
   await initBypassNetImgError();
@@ -43,6 +60,26 @@ Future<void> main() async {
   
   runApp(const MyApp());
   await initDesktopWindowSetting();
+}
+
+// 早期初始化桌面模式设置
+Future<void> _initDesktopModeEarly() async {
+  final storedMode = GetStorage().read('forceDesktopMode');
+  if (storedMode != null && storedMode == true) {
+    // 桌面模式：锁定横屏
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    globalTalker.info('[Main] 早期检测到桌面模式，已设置为横屏');
+  } else {
+    // 移动模式：锁定竖屏
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+    globalTalker.info('[Main] 早期检测到移动模式，已设置为竖屏');
+  }
 }
 
 // 初始化默认音质配置
@@ -94,6 +131,7 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   bool _isWidthGreaterThanHeight = false;
+  final RxBool _forceDesktopMode = false.obs;
   @override
   void initState() {
     super.initState();
@@ -102,6 +140,47 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await initMobileDevice(context);
     });
+    // 初始化桌面模式设置
+    _initDesktopModeSetting();
+  }
+  
+  // 初始化桌面模式设置（仅用于状态管理，屏幕方向已在main()中设置）
+  void _initDesktopModeSetting() {
+    final storedMode = GetStorage().read('forceDesktopMode');
+    if (storedMode != null) {
+      _forceDesktopMode.value = storedMode;
+    } else {
+      // 默认设置为移动模式
+      _forceDesktopMode.value = false;
+    }
+  }
+  
+  // 处理桌面模式切换（当用户手动切换模式时调用）
+  void _handleDesktopModeSwitch(bool isDesktopMode) {
+    _forceDesktopMode.value = isDesktopMode;
+    GetStorage().write('forceDesktopMode', isDesktopMode);
+    
+    // 异步设置屏幕方向以避免阻塞UI
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _setScreenOrientation(isDesktopMode);
+    });
+  }
+  
+  // 设置屏幕方向（仅在用户切换模式时调用）
+  void _setScreenOrientation(bool isDesktopMode) async {
+    if (isDesktopMode) {
+      // 桌面模式：锁定横屏
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    } else {
+      // 移动模式：锁定竖屏
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+    }
   }
 
   @override
@@ -109,6 +188,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     return LayoutBuilder(
       builder: (context, constraints) {
         _isWidthGreaterThanHeight = isWidthGreaterThanHeight(context);
+        
+        // 设置系统导航条样式
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _setSystemUIOverlayStyle();
+        });
+
         return CupertinoApp(
           localizationsDelegates: const [
             DefaultMaterialLocalizations.delegate,
@@ -126,9 +211,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             immersive: false,
             backgroundColor: Colors.white,
             enableAdaptive: true,
-            child: _isWidthGreaterThanHeight
+            child: Obx(() => _forceDesktopMode.value
                 ? const DesktopHome()
-                : const MobileHome(),
+                : const MobileHome()),
           ),
           // home:const MobileHome()
         );
@@ -157,6 +242,29 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       case AppLifecycleState.hidden:
         // 应用被隐藏
         break;
+    }
+  }
+
+  // 设置系统导航条样式
+  void _setSystemUIOverlayStyle() {
+    final isDarkMode = MediaQuery.of(context).platformBrightness == Brightness.dark;
+
+    if (_forceDesktopMode.value) {
+      // 桌面模式：白色导航条
+      SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+        systemNavigationBarColor: Colors.white,
+        systemNavigationBarIconBrightness: Brightness.dark,
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: isDarkMode ? Brightness.light : Brightness.dark,
+      ));
+    } else {
+      // 移动模式：透明导航条
+      SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarDividerColor: Colors.transparent,
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: isDarkMode ? Brightness.light : Brightness.dark,
+      ));
     }
   }
 

@@ -50,6 +50,19 @@ class LyricDisplayState extends State<LyricDisplay> {
     lyricModel = builder.getModel();
   }
 
+  // 限制位置值范围以避免动画错误
+  int _clampPosition(int position) {
+    try {
+      // 如果位置值异常大，返回0或一个合理的默认值
+      if (position < 0 || position > 24 * 60 * 60 * 1000) { // 24小时作为最大值
+        return 0;
+      }
+      return position;
+    } catch (e) {
+      return 0;
+    }
+  }
+
   @override
   void dispose() {
     stream.cancel();
@@ -91,7 +104,7 @@ class LyricDisplayState extends State<LyricDisplay> {
                 ),
               ),
               model: lyricModel,
-              position: globalAudioUiController.position.value.inMilliseconds,
+              position: _clampPosition(globalAudioUiController.position.value.inMilliseconds),
               lyricUi: lyricUI,
               size: Size(double.infinity, widget.maxHeight - 40),
               padding: const EdgeInsets.symmetric(horizontal: 40),

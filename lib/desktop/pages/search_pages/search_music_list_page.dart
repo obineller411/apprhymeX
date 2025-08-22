@@ -133,18 +133,36 @@ class _SearchMusicListState extends State<SearchMusicListPage>
                 )),
             Padding(
               padding: const EdgeInsets.only(left: 8.0, right: 8.0, top: 10.0),
-              child: CupertinoSearchTextField(
-                style: TextStyle(
-                  color: isDarkMode
-                      ? CupertinoColors.white
-                      : CupertinoColors.black,
-                ).useSystemChineseFont(),
-                controller: _inputContentController,
-                onSubmitted: (String value) {
-                  if (value.isNotEmpty) {
-                    _pagingController.refresh();
-                  }
-                },
+              child: Row(
+                children: [
+                  Expanded(
+                    child: CupertinoSearchTextField(
+                      style: TextStyle(
+                        color: isDarkMode
+                            ? CupertinoColors.white
+                            : CupertinoColors.black,
+                      ).useSystemChineseFont(),
+                      controller: _inputContentController,
+                      onSubmitted: (String value) {
+                        if (value.isNotEmpty) {
+                          _pagingController.refresh();
+                        }
+                      },
+                    ),
+                  ),
+                  // 清除按钮
+                  CupertinoButton(
+                    padding: const EdgeInsets.all(0),
+                    onPressed: () {
+                      _inputContentController.clear();
+                      _pagingController.refresh(); // 刷新搜索结果
+                    },
+                    child: const Icon(
+                      CupertinoIcons.clear, // 清除图标
+                      size: 25,
+                    ),
+                  ),
+                ],
               ),
             ),
             Expanded(

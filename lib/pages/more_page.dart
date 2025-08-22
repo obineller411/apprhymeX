@@ -20,6 +20,8 @@ import 'package:chinese_font_library/chinese_font_library.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:talker_flutter/talker_flutter.dart';
+import 'package:get/get.dart';
+import 'package:get_storage/get_storage.dart';
 
 class MorePage extends StatefulWidget {
   const MorePage({super.key});
@@ -29,15 +31,28 @@ class MorePage extends StatefulWidget {
 }
 
 class MorePageState extends State<MorePage> with WidgetsBindingObserver {
-  refresh() {
-    setState(() {});
-  }
-
+  final RxBool _forceDesktopMode = false.obs;
+  
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // 初始化桌面模式设置
+    _initDesktopModeSetting();
   }
+  
+  // 初始化桌面模式设置
+  void _initDesktopModeSetting() {
+    final storedMode = GetStorage().read('forceDesktopMode');
+    if (storedMode != null) {
+      _forceDesktopMode.value = storedMode;
+    }
+  }
+  
+  refresh() {
+    setState(() {});
+  }
+
 
   @override
   void dispose() {
@@ -285,6 +300,67 @@ class MorePageState extends State<MorePage> with WidgetsBindingObserver {
                               TalkerScreen(talker: globalTalker),
                         ));
                       })),
+              Obx(() => CupertinoFormRow(
+                prefix: Padding(
+                  padding: const EdgeInsets.only(right: 20),
+                  child: Text(
+                    '桌面模式',
+                    style: TextStyle(color: textColor).useSystemChineseFont(),
+                  ),
+                ),
+                child: CupertinoSwitch(
+                  value: _forceDesktopMode.value,
+                  onChanged: (value) async {
+                    if (value != _forceDesktopMode.value) {
+                      // 显示确认对话框
+                      bool? confirm = await showCupertinoDialog<bool>(
+                        context: context,
+                        builder: (context) => CupertinoAlertDialog(
+                          title: Text(
+                            '切换桌面模式',
+                            style: TextStyle().useSystemChineseFont(),
+                          ),
+                          content: Text(
+                            value
+                                ? '开启桌面模式需要重启应用才能生效，是否继续？'
+                                : '关闭桌面模式需要重启应用才能生效，是否继续？',
+                            style: TextStyle().useSystemChineseFont(),
+                          ),
+                          actions: [
+                            CupertinoDialogAction(
+                              onPressed: () {
+                                Navigator.of(context).pop(false);
+                              },
+                              child: Text(
+                                '取消',
+                                style: TextStyle().useSystemChineseFont(),
+                              ),
+                            ),
+                            CupertinoDialogAction(
+                              onPressed: () {
+                                Navigator.of(context).pop(true);
+                              },
+                              child: Text(
+                                '确定',
+                                style: TextStyle().useSystemChineseFont(),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                      
+                      if (confirm == true) {
+                        _forceDesktopMode.value = value;
+                        GetStorage().write('forceDesktopMode', value);
+                        
+                        // 延迟退出应用
+                        await Future.delayed(const Duration(milliseconds: 500));
+                        await exitApp();
+                      }
+                    }
+                  },
+                ),
+              )),
             ],
           ),
         ],

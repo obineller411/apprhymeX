@@ -49,34 +49,35 @@ class _DesktopHomeState extends State<DesktopHome> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       child: SafeArea(
-          child: Row(
-        children: [
-          const MyNavListContainer(),
-          Expanded(
-            child: Column(
-              children: [
-                const SizedBox(
-                  height: 60,
-                  child: ControlBar(),
-                ),
-                Expanded(
-                  child: Navigator(
-                    key: globalDesktopNavigatorKey,
-                    onGenerateRoute: (RouteSettings settings) {
-                      return CupertinoPageRoute(
-                        builder: (context) {
-                          globalDesktopPageContext = context;
-                          return const DesktopLocalMusicListGridPage();
-                        },
-                      );
-                    },
+        child: Row(
+          children: [
+            const MyNavListContainer(),
+            Expanded(
+              child: Column(
+                children: [
+                  Expanded(
+                    child: Navigator(
+                      key: globalDesktopNavigatorKey,
+                      onGenerateRoute: (RouteSettings settings) {
+                        return CupertinoPageRoute(
+                          builder: (context) {
+                            globalDesktopPageContext = context;
+                            return const DesktopLocalMusicListGridPage();
+                          },
+                        );
+                      },
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(
+                    height: 80,
+                    child: ControlBar(),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
-      )),
+          ],
+        ),
+      ),
     );
   }
 }

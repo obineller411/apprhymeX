@@ -196,6 +196,19 @@ class _SearchMusicAggregatorPageState extends State<SearchMusicAggregatorPage>
                     },
                   ),
                 ),
+                // 清除按钮
+                CupertinoButton(
+                  padding: const EdgeInsets.all(0),
+                  onPressed: () {
+                    _inputContentController.clear();
+                    _clearFilter(); // 清除筛选条件
+                    _pagingController.refresh(); // 刷新搜索结果
+                  },
+                  child: const Icon(
+                    CupertinoIcons.clear, // 清除图标
+                    size: 25,
+                  ),
+                ),
                 CupertinoButton(
                   padding: const EdgeInsets.all(0),
                   onPressed: _toggleFilterSection,

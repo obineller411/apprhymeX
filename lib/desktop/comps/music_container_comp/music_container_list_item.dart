@@ -10,6 +10,7 @@ import 'package:app_rhyme/utils/time_parser.dart';
 import 'package:chinese_font_library/chinese_font_library.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:pull_down_button/pull_down_button.dart';
 
 class MusicContainerListHeaderRow extends StatelessWidget {
@@ -150,18 +151,23 @@ class _MusicContainerListItemState extends State<MusicContainerListItem> {
               child: TableRowWidget(
                 children: [
                   MusicCell(
+                      key: Key('music_cell_${widget.musicContainer.info.id}_${widget.musicContainer.info.source}'),
                       musicContainer: widget.musicContainer,
                       isDarkMode: widget.isDarkMode),
                   ArtistCell(
+                      key: Key('artist_cell_${widget.musicContainer.info.id}_${widget.musicContainer.info.source}'),
                       musicContainer: widget.musicContainer,
                       isDarkMode: widget.isDarkMode),
                   AlbumCell(
+                      key: Key('album_cell_${widget.musicContainer.info.id}_${widget.musicContainer.info.source}'),
                       musicContainer: widget.musicContainer,
                       isDarkMode: widget.isDarkMode),
                   DurationCell(
+                      key: Key('duration_cell_${widget.musicContainer.info.id}_${widget.musicContainer.info.source}'),
                       musicContainer: widget.musicContainer,
                       isDarkMode: widget.isDarkMode),
                   OptionsCell(
+                    key: Key('options_cell_${widget.musicContainer.info.id}_${widget.musicContainer.info.source}'),
                     musicContainer: widget.musicContainer,
                     isDarkMode: widget.isDarkMode,
                     onTapDown: (details) {
@@ -239,12 +245,44 @@ class MusicCell extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(
-            musicContainer.info.name,
-            style: TextStyle(
-              color: isDarkMode ? CupertinoColors.white : CupertinoColors.black,
-            ).useSystemChineseFont(),
-            overflow: TextOverflow.ellipsis,
+          child: GestureDetector(
+            key: Key('gesture_detector_${musicContainer.info.id}_${musicContainer.info.source}'),
+            onLongPress: () async {
+              // 构建要复制的文本：歌曲名称 - 歌手
+              String copyText = '${musicContainer.info.name} - ${musicContainer.info.artist.join(", ")}';
+              
+              // 复制到剪贴板
+              await Clipboard.setData(ClipboardData(text: copyText));
+              
+              // 显示复制成功提示
+              if (context.mounted) {
+                showCupertinoDialog(
+                  context: context,
+                  builder: (BuildContext context) {
+                    return CupertinoAlertDialog(
+                      title: const Text("复制成功"),
+                      content: Text("已复制歌曲信息: $copyText"),
+                      actions: <Widget>[
+                        CupertinoDialogAction(
+                          child: const Text("确定"),
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                          },
+                        ),
+                      ],
+                    );
+                  },
+                );
+              }
+            },
+            child: Text(
+              key: Key('song_name_${musicContainer.info.id}_${musicContainer.info.source}'),
+              musicContainer.info.name,
+              style: TextStyle(
+                color: isDarkMode ? CupertinoColors.white : CupertinoColors.black,
+              ).useSystemChineseFont(),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ),
       ],
@@ -265,6 +303,7 @@ class ArtistCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(
+      key: Key('artist_name_${musicContainer.info.id}_${musicContainer.info.source}'),
       musicContainer.info.artist.join(", "),
       style: TextStyle(
         color: isDarkMode
@@ -289,6 +328,7 @@ class AlbumCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(
+      key: Key('album_name_${musicContainer.info.id}_${musicContainer.info.source}'),
       musicContainer.info.album ?? '未知专辑',
       style: TextStyle(
         color: isDarkMode
@@ -316,6 +356,7 @@ class DurationCell extends StatelessWidget {
       return const SizedBox();
     }
     return Text(
+      key: Key('duration_${musicContainer.info.id}_${musicContainer.info.source}'),
       formatDuration(musicContainer.info.duration!),
       style: TextStyle(
         color: isDarkMode
@@ -401,6 +442,7 @@ class _OptionsCellState extends State<OptionsCell> {
         GestureDetector(
           onTapDown: widget.onTapDown,
           child: Container(
+            key: Key('menu_container_${widget.musicContainer.info.id}_${widget.musicContainer.info.source}'),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
@@ -409,6 +451,7 @@ class _OptionsCellState extends State<OptionsCell> {
                   : CupertinoColors.systemGrey6.withOpacity(0.5),
             ),
             child: Icon(
+              key: Key('menu_icon_${widget.musicContainer.info.id}_${widget.musicContainer.info.source}'),
               CupertinoIcons.ellipsis,
               color: widget.isDarkMode ? CupertinoColors.systemGrey4 : activeIconRed,
               size: 20,
