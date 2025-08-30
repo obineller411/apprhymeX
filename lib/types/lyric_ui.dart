@@ -18,14 +18,16 @@ class AppleMusicLyricUi extends LyricUI {
   @override
   TextStyle getPlayingExtTextStyle() {
     return const TextStyle(
-            color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)
+            color: Color.fromARGB(255, 120, 119, 118),
+            fontSize: 22,
+            fontWeight: FontWeight.bold)
         .useSystemChineseFont();
   }
 
   @override
   TextStyle getOtherMainTextStyle() {
     return const TextStyle(
-      color: Color.fromARGB(200, 120, 119, 118),
+      color: Colors.white,
       fontSize: 22,
       fontWeight: FontWeight.bold,
     ).useSystemChineseFont();
@@ -35,7 +37,7 @@ class AppleMusicLyricUi extends LyricUI {
   @override
   TextStyle getOtherExtTextStyle() {
     return const TextStyle(
-      color: Color.fromARGB(200, 120, 119, 118),
+      color: Colors.white,
       fontSize: 22,
       fontWeight: FontWeight.bold,
     ).useSystemChineseFont();
@@ -64,7 +66,7 @@ class AppleMusicLyricUi extends LyricUI {
 
   @override
   Color getLyricHightlightColor() {
-    return const Color.fromARGB(255, 255, 255, 255);
+    return Colors.white;
   }
 
   @override

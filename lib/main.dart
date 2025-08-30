@@ -12,6 +12,7 @@ import 'package:get_storage/get_storage.dart';
 import 'package:chinese_font_library/chinese_font_library.dart';
 import 'package:app_rhyme/audioControl/audio_controller.dart';
 import 'package:app_rhyme/src/rust/frb_generated.dart';
+import 'package:audio_service/audio_service.dart'; // Add this line
 import 'package:app_rhyme/src/rust/api/bind/factory_bind.dart';
 import 'package:app_rhyme/utils/bypass_netimg_error.dart';
 import 'package:app_rhyme/utils/desktop_device.dart';
@@ -33,6 +34,11 @@ Future<void> main() async {
   await _initDesktopModeEarly();
   
   // 配置系统导航条透明化
+  final storedMode = GetStorage().read('forceDesktopMode');
+  if (storedMode == null || storedMode == false) {
+    // 移动模式下才启用 edgeToEdge
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  }
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     systemNavigationBarColor: Colors.transparent,
     systemNavigationBarDividerColor: Colors.transparent,
@@ -49,6 +55,11 @@ Future<void> main() async {
   
   await initGlobalAudioHandler();
   await initGlobalAudioUiController();
+  
+  // 启动Android后台播放监控
+  if (Platform.isAndroid) {
+    AndroidBackgroundPlaybackMonitor().startMonitoring();
+  }
   
   // 初始化音质配置 - 等待所有全局变量初始化完成后再初始化音质配置
   globalTalker.info('[Main] 开始初始化音质配置');
@@ -143,7 +154,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     // 初始化桌面模式设置
     _initDesktopModeSetting();
   }
-  
+
   // 初始化桌面模式设置（仅用于状态管理，屏幕方向已在main()中设置）
   void _initDesktopModeSetting() {
     final storedMode = GetStorage().read('forceDesktopMode');
@@ -154,18 +165,18 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       _forceDesktopMode.value = false;
     }
   }
-  
+
   // 处理桌面模式切换（当用户手动切换模式时调用）
   void _handleDesktopModeSwitch(bool isDesktopMode) {
     _forceDesktopMode.value = isDesktopMode;
     GetStorage().write('forceDesktopMode', isDesktopMode);
-    
+
     // 异步设置屏幕方向以避免阻塞UI
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _setScreenOrientation(isDesktopMode);
     });
   }
-  
+
   // 设置屏幕方向（仅在用户切换模式时调用）
   void _setScreenOrientation(bool isDesktopMode) async {
     if (isDesktopMode) {
@@ -185,6 +196,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    _isWidthGreaterThanHeight = isWidthGreaterThanHeight(context);
+
+    // 设置系统导航条样式
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _setSystemUIOverlayStyle();
+    });
+
     return LayoutBuilder(
       builder: (context, constraints) {
         _isWidthGreaterThanHeight = isWidthGreaterThanHeight(context);
@@ -195,6 +213,24 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         });
 
         return CupertinoApp(
+          builder: (BuildContext context, Widget? child) {
+            // 处理 MediaQuery 异常问题，特别是小米澎湃系统
+            MediaQueryData mediaQuery = MediaQuery.of(context);
+            double safeTop = mediaQuery.padding.top;
+
+            // 如果出现异常值，使用默认值替代
+            if (safeTop > 80 || safeTop < 0) {
+              developer.log('Detected abnormal top padding: $safeTop, using fallback.');
+              safeTop = 24.0; // 合理默认值
+            }
+
+            return MediaQuery(
+              data: mediaQuery.copyWith(
+                padding: mediaQuery.padding.copyWith(top: safeTop),
+              ),
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
           localizationsDelegates: const [
             DefaultMaterialLocalizations.delegate,
             DefaultCupertinoLocalizations.delegate,
@@ -222,7 +258,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
+  Future<void> didChangeAppLifecycleState(AppLifecycleState state) async { // Make it async
     switch (state) {
       case AppLifecycleState.paused:
         // 应用进入后台
@@ -231,10 +267,20 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       case AppLifecycleState.resumed:
         // 应用回到前台
         BackgroundPlaybackHelper().markDidEnterForeground();
+        // Android平台：记录播放成功
+        if (Platform.isAndroid) {
+          AndroidBackgroundPlaybackMonitor().recordPlaybackSuccess();
+        }
         break;
       case AppLifecycleState.detached:
         // 应用被终止
         BackgroundPlaybackHelper().dispose();
+        // Android平台：停止监控
+        if (Platform.isAndroid) {
+          AndroidBackgroundPlaybackMonitor().stopMonitoring();
+        }
+        // 显式停止 AudioService
+        await AudioService.stop();
         break;
       case AppLifecycleState.inactive:
         // 应用处于非活动状态
@@ -252,7 +298,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (_forceDesktopMode.value) {
       // 桌面模式：白色导航条
       SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
-        systemNavigationBarColor: Colors.white,
+        systemNavigationBarColor: Colors.transparent,
         systemNavigationBarIconBrightness: Brightness.dark,
         statusBarColor: Colors.transparent,
         statusBarIconBrightness: isDarkMode ? Brightness.light : Brightness.dark,
@@ -275,6 +321,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.dispose();
   }
 }
+
 
 // 初始化数据库
 Future<void> initDatabase() async {

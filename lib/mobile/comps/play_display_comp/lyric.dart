@@ -8,65 +8,53 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_lyric/lyrics_reader.dart';
 import 'package:get/get.dart';
+// import 'package:flutter_lyric/lyrics_reader_model.dart'; // 移除或注释掉这行
 
 class LyricDisplay extends StatefulWidget {
-  final double maxHeight;
-  final bool isDarkMode;
-  const LyricDisplay(
-      {super.key, required this.maxHeight, required this.isDarkMode});
+  const LyricDisplay({
+    super.key,
+  });
 
   @override
-  LyricDisplayState createState() => LyricDisplayState();
+  State<LyricDisplay> createState() => _LyricDisplayState();
 }
 
-class LyricDisplayState extends State<LyricDisplay> {
+class _LyricDisplayState extends State<LyricDisplay> {
   late LyricUI lyricUI;
-  var lyricModel =
-      LyricsModelBuilder.create().bindLyricToMain("[00:00.00]无歌词").getModel();
-  late StreamSubscription<MusicContainer?> stream;
-  bool showTranslation = false;
+  final Rx<ValueKey> lyricKey = Rx(const ValueKey(null));
+  final RxBool showTranslation = RxBool(false);
+  final Rx currentLyricModel = Rx(LyricsModelBuilder.create().getModel()); // 移除类型参数
 
   @override
   void initState() {
     super.initState();
     lyricUI = AppleMusicLyricUi();
-    updateLyricModel();
-    stream = globalAudioHandler.playingMusic.listen((p0) {
-      setState(() {
-        updateLyricModel();
-      });
+    // 监听音乐变化以更新歌词模型
+    ever(globalAudioHandler.playingMusic, (MusicContainer? music) {
+      _updateLyricModel(music);
     });
+    // 初始设置歌词模型
+    _updateLyricModel(globalAudioHandler.playingMusic.value);
   }
 
-  void updateLyricModel() {
-    var musicInfo = globalAudioHandler.playingMusic.value?.info;
-    var lyric = musicInfo?.lyric ?? "[00:00.00]无歌词";
-    var tlyric = musicInfo?.tlyric;
+  void _updateLyricModel(MusicContainer? music) {
+    final lyric = music?.info.lyric;
+    final tlyric = music?.info.tlyric;
+
+    if (lyricKey.value.value != lyric) {
+      lyricKey.value = ValueKey(lyric);
+    }
+
+    if (lyric == null) {
+      currentLyricModel.value = LyricsModelBuilder.create().getModel();
+      return;
+    }
 
     var builder = LyricsModelBuilder.create().bindLyricToMain(lyric);
-    if (showTranslation && tlyric != null && tlyric.isNotEmpty) {
+    if (showTranslation.value && tlyric != null && tlyric.isNotEmpty) {
       builder = builder.bindLyricToExt(tlyric);
     }
-    lyricModel = builder.getModel();
-  }
-
-  // 限制位置值范围以避免动画错误
-  int _clampPosition(int position) {
-    try {
-      // 如果位置值异常大，返回0或一个合理的默认值
-      if (position < 0 || position > 24 * 60 * 60 * 1000) { // 24小时作为最大值
-        return 0;
-      }
-      return position;
-    } catch (e) {
-      return 0;
-    }
-  }
-
-  @override
-  void dispose() {
-    stream.cancel();
-    super.dispose();
+    currentLyricModel.value = builder.getModel();
   }
 
   @override
@@ -77,73 +65,102 @@ class LyricDisplayState extends State<LyricDisplay> {
           height: 40,
           child: Align(
             alignment: Alignment.centerRight,
-            child: CupertinoButton(
+            child: Obx(() => CupertinoButton(
               padding: const EdgeInsets.only(left: 9.5, right: 9.5),
               onPressed: () {
-                setState(() {
-                  showTranslation = !showTranslation;
-                  updateLyricModel();
-                });
+                showTranslation.value = !showTranslation.value;
+                _updateLyricModel(globalAudioHandler.playingMusic.value); // 翻译切换时更新歌词模型
               },
               child: Icon(
-                showTranslation
+                showTranslation.value
                     ? CupertinoIcons.captions_bubble_fill
                     : CupertinoIcons.captions_bubble,
                 color: CupertinoColors.white,
                 size: 25,
               ),
-            ),
+            )),
           ),
         ),
-        Obx(() => LyricsReader(
-              playing: globalAudioHandler.playingMusic.value != null,
-              emptyBuilder: () => Center(
-                child: Text(
-                  "No lyrics",
-                  style: lyricUI.getOtherMainTextStyle().useSystemChineseFont(),
-                ),
-              ),
-              model: lyricModel,
-              position: _clampPosition(globalAudioUiController.position.value.inMilliseconds),
-              lyricUi: lyricUI,
-              size: Size(double.infinity, widget.maxHeight - 40),
-              padding: const EdgeInsets.symmetric(horizontal: 40),
-              selectLineBuilder: (progress, confirm) {
-                return Row(
-                  children: [
-                    IconButton(
-                        onPressed: () {
-                          var toSeek = Duration(milliseconds: progress);
-                          globalAudioHandler.seek(toSeek).then((value) {
-                            confirm.call();
-                            // 这里是考虑到在暂停状态下。需要开启播放
-                            if (!globalAudioHandler.isPlaying) {
-                              globalAudioHandler.play();
-                            }
-                          });
-                        },
-                        icon: const Icon(Icons.play_arrow,
-                            color: CupertinoColors.white)),
-                    Expanded(
-                      child: Container(
-                        decoration:
-                            const BoxDecoration(color: CupertinoColors.white),
-                        height: 1,
-                        width: double.infinity,
-                      ),
-                    ),
-                    Text(
-                      formatDuration(
-                          Duration(milliseconds: progress).inSeconds),
-                      style: const TextStyle(color: CupertinoColors.white)
+        Expanded(
+          child: StreamBuilder<Duration>(
+            stream: globalAudioUiController.position.stream,
+            builder: (context, snapshot) {
+              return Obx(() {
+                final position = snapshot.data?.inMilliseconds ?? 0;
+                final lyric = globalAudioHandler.playingMusic.value?.info.lyric;
+
+                if (lyric == null) {
+                  return Center(
+                    child: Text(
+                      "No lyrics",
+                      style: lyricUI
+                          .getOtherMainTextStyle()
                           .useSystemChineseFont(),
-                    )
-                  ],
+                    ),
+                  );
+                }
+                
+                return ShaderMask(
+                  key: lyricKey.value,
+                  shaderCallback: (rect) {
+                    return LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.white.withOpacity(0.0),
+                        Colors.white,
+                        Colors.white,
+                        Colors.white.withOpacity(0.0),
+                      ],
+                      stops: const [0.0, 0.4, 0.6, 1.0],
+                    ).createShader(rect);
+                  },
+                  blendMode: BlendMode.dstIn,
+                  child: LyricsReader(
+                    playing: globalAudioHandler.playingMusic.value != null,
+                    model: currentLyricModel.value,
+                    position: position,
+                    lyricUi: lyricUI,
+                    padding: const EdgeInsets.symmetric(horizontal: 40),
+                    selectLineBuilder: (progress, confirm) {
+                      return Row(
+                        children: [
+                          IconButton(
+                              onPressed: () {
+                                var toSeek = Duration(milliseconds: progress);
+                                globalAudioHandler.seek(toSeek).then((value) {
+                                  confirm.call();
+                                  if (!globalAudioHandler.isPlaying) {
+                                    globalAudioHandler.play();
+                                  }
+                                });
+                              },
+                              icon: const Icon(Icons.play_arrow,
+                                  color: CupertinoColors.white)),
+                          Expanded(
+                            child: Container(
+                              decoration: const BoxDecoration(
+                                  color: CupertinoColors.white),
+                              height: 1,
+                              width: double.infinity,
+                            ),
+                          ),
+                          Text(
+                            formatDuration(
+                                Duration(milliseconds: progress).inSeconds),
+                            style: const TextStyle(color: CupertinoColors.white)
+                                .useSystemChineseFont(),
+                          )
+                        ],
+                      );
+                    },
+                  ),
                 );
-              },
-            )),
+              });
+            },
+          ),
+        ),
       ],
     );
   }
 }
-

@@ -27,12 +27,14 @@ class QualityTimeState extends State<QualityTime> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Obx(() {
-            return SizedBox(
+          StreamBuilder<Duration>(
+            stream: globalAudioUiController.position.stream,
+            builder: (context, snapshot) {
+              final positionInSeconds = (snapshot.data?.inSeconds ?? 0);
+              return SizedBox(
                 width: 60,
                 child: Text(
-                  formatDuration(
-                      globalAudioUiController.position.value.inSeconds),
+                  formatDuration(positionInSeconds),
                   textAlign: TextAlign.left,
                   style: TextStyle(
                     color: CupertinoColors.systemGrey6,
@@ -41,56 +43,59 @@ class QualityTimeState extends State<QualityTime> {
                   ).useSystemChineseFont(),
                 ),
               );
-          }),
+            },
+          ),
           // 音质信息按钮
           widget.enableQualityMenu
-          ? GestureDetector(
-              key: const ValueKey("quality_button"),
-              onTapDown: (details) async {
-                // 防止快速多次点击导致的冲突
-                if (globalAudioUiController.isQualityMenuOpen.value) {
-                  return;
-                }
-                List<Quality>? qualityOptions =
-                    globalAudioHandler.playingMusic.value?.info.qualities;
-                if (qualityOptions != null && qualityOptions.isNotEmpty) {
-                  globalAudioUiController.isQualityMenuOpen.value = true;
-                  await showPullDownMenu(
-                      context: context,
-                      items: qualitySelectPullDown(context, qualityOptions,
-                          (selectQuality) async {
-                        await globalAudioHandler
-                            .replacePlayingMusic(selectQuality);
-                      }),
-                      position: details.globalPosition & Size.zero);
-                  globalAudioUiController.isQualityMenuOpen.value = false;
-                }
-              },
-              child: Obx(() {
-                final currentQuality = globalAudioHandler.playingMusic.value?.currentQuality.value;
-                final heroTag = "quality_badge_${currentQuality?.short ?? 'default'}";
-                return Hero(
-                  tag: heroTag,
-                  child: Badge(
+              ? GestureDetector(
+                  key: const ValueKey("quality_button"),
+                  onTapDown: (details) async {
+                    // 防止快速多次点击导致的冲突
+                    if (globalAudioUiController.isQualityMenuOpen.value) {
+                      return;
+                    }
+                    List<Quality>? qualityOptions =
+                        globalAudioHandler.playingMusic.value?.info.qualities;
+                    if (qualityOptions != null && qualityOptions.isNotEmpty) {
+                      globalAudioUiController.isQualityMenuOpen.value = true;
+                      await showPullDownMenu(
+                          context: context,
+                          items: qualitySelectPullDown(context, qualityOptions,
+                              (selectQuality) async {
+                            await globalAudioHandler
+                                .replacePlayingMusic(selectQuality);
+                          }),
+                          position: details.globalPosition & Size.zero);
+                      globalAudioUiController.isQualityMenuOpen.value = false;
+                    }
+                  },
+                  child: Obx(() {
+                    final currentQuality = globalAudioHandler.playingMusic.value?.currentQuality.value;
+                    final heroTag = "quality_badge_${currentQuality?.short ?? 'default'}";
+                    return Hero(
+                      tag: heroTag,
+                      child: Badge(
+                        isDarkMode: true,
+                        label: _getQualityDisplayName(currentQuality),
+                      ),
+                    );
+                  }),
+                )
+              : Obx(() {
+                  final currentQuality = globalAudioHandler.playingMusic.value?.currentQuality.value;
+                  return Badge(
                     isDarkMode: true,
                     label: _getQualityDisplayName(currentQuality),
-                  ),
-                );
-              }),
-            )
-          : Obx(() {
-              final currentQuality = globalAudioHandler.playingMusic.value?.currentQuality.value;
-              return Badge(
-                isDarkMode: true,
-                label: _getQualityDisplayName(currentQuality),
-              );
-            }),
-          Obx(() {
-            return SizedBox(
+                  );
+                }),
+          StreamBuilder<Duration>(
+            stream: globalAudioUiController.duration.stream,
+            builder: (context, snapshot) {
+              final durationInSeconds = (snapshot.data?.inSeconds ?? 0);
+              return SizedBox(
                 width: 60,
                 child: Text(
-                  formatDuration(
-                      globalAudioUiController.duration.value.inSeconds),
+                  formatDuration(durationInSeconds),
                   textAlign: TextAlign.right,
                   style: TextStyle(
                     color: CupertinoColors.systemGrey6,
@@ -99,7 +104,8 @@ class QualityTimeState extends State<QualityTime> {
                   ).useSystemChineseFont(),
                 ),
               );
-          }),
+            },
+          ),
         ],
       ),
     );

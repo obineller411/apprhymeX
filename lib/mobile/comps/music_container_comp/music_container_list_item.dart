@@ -39,7 +39,7 @@ class MusicContainerListItem extends StatefulWidget {
   _MusicContainerListItemState createState() => _MusicContainerListItemState();
 }
 
-class _MusicContainerListItemState extends State<MusicContainerListItem> {
+class _MusicContainerListItemState extends State<MusicContainerListItem> with AutomaticKeepAliveClientMixin {
   bool? _hasCache;
 
   @override
@@ -49,9 +49,12 @@ class _MusicContainerListItemState extends State<MusicContainerListItem> {
     // Future.delayed(const Duration(milliseconds: 100), _checkCache);
   }
 
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     // 禁用缓存检查，避免快速滑动时的内存泄漏
     // if (_hasCache == null) {
     //   _checkCache();

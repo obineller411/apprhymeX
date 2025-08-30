@@ -38,7 +38,10 @@ class LocalMusicListGridPageState extends State<LocalMusicListGridPage>
     globalMobileMusicListGridPageRefreshFunction = () {
       loadMusicLists();
     };
-    loadMusicLists();
+    // 延迟加载数据，避免阻塞UI
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      loadMusicLists();
+    });
   }
 
   @override
@@ -161,6 +164,13 @@ class LocalMusicListGridPageState extends State<LocalMusicListGridPage>
                           delegate: SliverChildBuilderDelegate(
                             (BuildContext context, int index) {
                               var musicList = musicLists[index];
+                              // Precache the image
+                              if (musicList.getMusiclistInfo().artPic.isNotEmpty) {
+                                precacheImage(
+                                  NetworkImage(musicList.getMusiclistInfo().artPic),
+                                  context,
+                                );
+                              }
                               return MusicListImageCard(
                                 key: ValueKey(musicList.getMusiclistInfo().id),
                                 musicListW: musicList,
@@ -181,6 +191,8 @@ class LocalMusicListGridPageState extends State<LocalMusicListGridPage>
                               );
                             },
                             childCount: musicLists.length,
+                            addRepaintBoundaries: true,
+                            addAutomaticKeepAlives: true,
                           ),
                         ),
                       ),

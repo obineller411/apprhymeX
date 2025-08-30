@@ -1,6 +1,9 @@
 import 'dart:math';
 
+import 'dart:ui';
+
 import 'package:chinese_font_library/chinese_font_library.dart';
+import 'package:flutter/material.dart';
 import 'package:app_rhyme/mobile/comps/play_display_comp/bottom_button.dart';
 import 'package:app_rhyme/mobile/comps/play_display_comp/control_button.dart';
 import 'package:app_rhyme/mobile/comps/play_display_comp/lyric.dart';
@@ -14,6 +17,8 @@ import 'package:app_rhyme/mobile/comps/play_display_comp/volume_slider.dart';
 import 'package:app_rhyme/utils/global_vars.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:dismissible_page/dismissible_page.dart';
+import 'package:get/get.dart';
+import 'package:app_rhyme/utils/color_extraction.dart';
 
 enum PageState { main, list, lyric }
 
@@ -101,8 +106,6 @@ class SongDisplayPageState extends State<SongDisplayPage>
   Widget build(BuildContext context) {
     const bool isDarkMode = true;
     const animateBackgroundColor = CupertinoColors.white;
-    const backgroundColor1 = Color.fromARGB(255, 56, 56, 56);
-    const backgroundColor2 = Color.fromARGB(255, 31, 31, 31);
 
     const textColor = CupertinoColors.white;
 
@@ -173,112 +176,108 @@ class SongDisplayPageState extends State<SongDisplayPage>
             picPadding: EdgeInsets.only(left: 20),
           ),
           // 应当占据剩下的空间
-          LyricDisplay(
-            maxHeight: screenHeight * 0.87 - 240,
-            isDarkMode: isDarkMode,
+          SizedBox(
+            height: screenHeight * 0.87 - 240,
+            child: const LyricDisplay(),
           )
         ];
         break;
     }
+
+    final backgroundGradient = globalAudioHandler.currentBackgroundGradient.value;
 
     return DismissiblePage(
       isFullScreen: true,
       direction: DismissiblePageDismissDirection.down,
       backgroundColor: animateBackgroundColor,
       onDismissed: () => Navigator.of(context).pop(),
-      child: Container(
-        clipBehavior: Clip.antiAliasWithSaveLayer,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topRight,
-            end: Alignment.bottomLeft,
-            colors: [backgroundColor2, backgroundColor1],
+      child: Stack(
+        children: [
+          // Background with gradient
+          Obx(() => Container(
+            decoration: BoxDecoration(
+              gradient: globalAudioHandler.currentBackgroundGradient.value,
+            ),
+          )),
+          // Gaussian blur effect
+          BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 30.0, sigmaY: 30.0),
+            child: Container(
+              color: Colors.black.withOpacity(0.1), // Slight tint
+            ),
           ),
-        ),
-        child: Stack(children: [
-          // 上方组件
-          Column(
-            children: [
-              const Padding(padding: EdgeInsets.only(top: 40)),
-              // 使用FadeTransition和SlideTransition添加动画
-              FadeTransition(
-                opacity: _fadeAnimation,
-                child: SlideTransition(
-                  position: _slideAnimation,
-                  child: Column(
-                    children: topWidgets,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          // 固定在页面底部的内容,共占据约 140 + screenHeight * 0.2 的高度
-          Positioned(
-            bottom: 0, // 确保它固定在底部
-            left: 0,
-            right: 0,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.end,
+          // Foreground content
+          Stack(children: [
+            // 上方组件
+            Column(
               children: [
-                // main界面时占据36的高度
-                if (pageState == PageState.main)
-                  const MusicInfo(
-                    titleHeight: 20,
-                    artistHeight: 16,
-                    padding: EdgeInsets.only(left: 40, right: 40),
+                const Padding(padding: EdgeInsets.only(top: 40)),
+                // 使用FadeTransition和SlideTransition添加动画
+                FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: SlideTransition(
+                    position: _slideAnimation,
+                    child: Column(
+                      children: topWidgets,
+                    ),
                   ),
-                // 占据约35的高度
-                const ProgressSlider(
-                  padding: EdgeInsets.only(
-                      top: 10, bottom: 10, left: 20, right: 20),
-                  isDarkMode: true,
-                ),
-                // 占据 12 高度
-                QualityTime(
-                  fontHeight: 12,
-                  padding: 35,
-                  enableQualityMenu: pageState == PageState.main,
-                ),
-                Container(
-                    padding: EdgeInsets.only(
-                        top: screenHeight * 0.04,
-                        bottom: screenHeight * 0.04),
-                    child: ControlButton(
-                      buttonSize: screenWidth * 0.11,
-                      buttonSpacing: screenWidth * 0.12,
-                    )),
-                const VolumeSlider(
-                  padding: EdgeInsets.only(left: 20, right: 20),
-                  isDarkMode: true,
-                ),
-                // if (!Platform.isIOS) const VolumeSlider(),
-                // 占据 55 的高度
-                BottomButton(
-                  onList: onListBotton,
-                  onLyric: onLyricBotton,
-                  padding: const EdgeInsets.only(top: 10, bottom: 20),
-                  size: 25,
                 ),
               ],
             ),
-          ),
-        ]),
+            // 固定在页面底部的内容,共占据约 140 + screenHeight * 0.2 的高度
+            Positioned(
+              bottom: 0, // 确保它固定在底部
+              left: 0,
+              right: 0,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  // main界面时占据36的高度
+                  if (pageState == PageState.main)
+                    const MusicInfo(
+                      titleHeight: 20,
+                      artistHeight: 16,
+                      padding: EdgeInsets.only(left: 40, right: 40),
+                    ),
+                  // 占据约35的高度
+                  const ProgressSlider(
+                    padding: EdgeInsets.only(
+                        top: 10, bottom: 10, left: 20, right: 20),
+                    isDarkMode: true,
+                  ),
+                  // 占据 12 高度
+                  QualityTime(
+                    fontHeight: 12,
+                    padding: 35,
+                    enableQualityMenu: pageState == PageState.main,
+                  ),
+                  Container(
+                      padding: EdgeInsets.only(
+                          top: screenHeight * 0.04,
+                          bottom: screenHeight * 0.04),
+                      child: ControlButton(
+                        buttonSize: screenWidth * 0.11,
+                        buttonSpacing: screenWidth * 0.12,
+                      )),
+                  const VolumeSlider(
+                    padding: EdgeInsets.only(left: 20, right: 20),
+                    isDarkMode: true,
+                  ),
+                  // if (!Platform.isIOS) const VolumeSlider(),
+                  // 占据 55 的高度
+                  BottomButton(
+                    onList: onListBotton,
+                    onLyric: onLyricBotton,
+                    padding: const EdgeInsets.only(top: 10, bottom: 20),
+                    size: 25,
+                  ),
+                ],
+              ),
+            ),
+          ]),
+        ],
       ),
     );
-  }
-}
+  } // build 方法结束
+  } // SongDisplayPageState 类结束
 
-void navigateToSongDisplayPage(BuildContext context) {
-  Navigator.of(context).push(
-    CupertinoPageRoute(
-      builder: (context) => const SongDisplayPage(),
-      fullscreenDialog: true,
-      // 为播放页面添加唯一的Hero标签以避免冲突
-      settings: const RouteSettings(name: 'play_display_page'),
-      // 完全禁用Hero动画以避免Cupertino导航栏冲突
-      maintainState: true,
-      // 禁用Hero动画以避免Cupertino导航栏默认标签冲突
-      allowSnapshotting: false,
-    ),
-  );
-}

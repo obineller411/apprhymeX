@@ -1,7 +1,7 @@
 import 'package:chinese_font_library/chinese_font_library.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
-import 'package:app_rhyme/mobile/pages/play_display_page.dart';
+import 'package:app_rhyme/mobile/pages/local_music_container_listview_page.dart' as local_music_list;
 import 'package:app_rhyme/utils/cache_helper.dart';
 import 'package:app_rhyme/utils/global_vars.dart';
 
@@ -50,11 +50,15 @@ class _MusicControlBarState extends State<MusicControlBar>
       child: GestureDetector(
         onVerticalDragUpdate: (details) {
           if (details.delta.dy < 0) {
-            navigateToSongDisplayPage(context);
+            Future.delayed(const Duration(milliseconds: 100), () {
+              local_music_list.navigateToSongDisplayPage(context);
+            });
           }
         },
         onTap: () {
-          navigateToSongDisplayPage(context);
+          Future.delayed(const Duration(milliseconds: 100), () {
+            local_music_list.navigateToSongDisplayPage(context);
+          });
         },
         child: Container(
           color: backgroundColor,

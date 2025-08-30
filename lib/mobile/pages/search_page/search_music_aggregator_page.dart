@@ -397,9 +397,11 @@ class _SearchMusicAggregatorPageState extends State<SearchMusicAggregatorPage>
                   );
                 },
                 itemBuilder: (context, musicAggregator, index) =>
-                    MusicContainerListItem(
-                  musicContainer: MusicContainer(musicAggregator),
-                ),
+                    RepaintBoundary(
+                      child: MusicContainerListItem(
+                        musicContainer: MusicContainer(musicAggregator),
+                      ),
+                    ),
               ),
             ),
           ),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:app_rhyme/utils/global_vars.dart';
 
@@ -114,6 +115,19 @@ class NetworkStabilityHelper {
 
   /// 智能延迟策略 - 优化以支持高频率API请求
   Duration getSmartDelay() {
+    // Android平台后台播放特殊处理
+    if (Platform.isAndroid) {
+      final backgroundHelper = BackgroundPlaybackHelper();
+      if (backgroundHelper.isInBackground) {
+        // 后台播放时增加延迟，避免网络请求过于频繁
+        if (_consecutiveFailures == 0) return const Duration(milliseconds: 500);
+        if (_consecutiveFailures == 1) return const Duration(milliseconds: 1000);
+        if (_consecutiveFailures == 2) return const Duration(milliseconds: 2000);
+        return const Duration(milliseconds: 3000);
+      }
+    }
+    
+    // 前台播放或非Android平台
     if (_consecutiveFailures == 0) return Duration.zero;
     if (_consecutiveFailures == 1) return const Duration(milliseconds: 100);
     if (_consecutiveFailures == 2) return const Duration(milliseconds: 300);
@@ -252,13 +266,45 @@ class BackgroundPlaybackHelper {
   void _optimizeBackgroundPlayback(Timer timer) {
     if (!_isInBackground) return;
     
-    // 清理网络错误记录
-    NetworkStabilityHelper().reset();
-    
-    // 清理播放错误记录
-    AudioPlaybackRecoveryHelper().cleanupOldErrors();
-    
-    globalTalker.info('[BackgroundPlaybackHelper] 执行后台播放优化');
+    // Android平台特殊优化
+    if (Platform.isAndroid) {
+      globalTalker.info('[BackgroundPlaybackHelper] Android后台播放优化执行');
+      
+      // 清理网络错误记录，重置网络状态
+      NetworkStabilityHelper().reset();
+      
+      // 清理播放错误记录，但保留最近的错误记录
+      AudioPlaybackRecoveryHelper().cleanupOldErrors();
+      
+      // 预热网络连接
+      _warmUpNetworkConnection();
+    } else {
+      // 其他平台的标准优化
+      NetworkStabilityHelper().reset();
+      AudioPlaybackRecoveryHelper().cleanupOldErrors();
+      globalTalker.info('[BackgroundPlaybackHelper] 执行后台播放优化');
+    }
+  }
+  
+  /// 预热网络连接 - Android平台专用
+  void _warmUpNetworkConnection() {
+    // 发送一个轻量级的网络请求来保持网络连接活跃
+    Future.delayed(const Duration(milliseconds: 100), () async {
+      try {
+        final client = http.Client();
+        final request = http.Request('GET', Uri.parse('https://www.baidu.com'));
+        request.headers.addAll({'User-Agent': 'AppRhymeX/1.0'});
+        
+        // 设置较短的超时时间
+        final response = await client.send(request).timeout(const Duration(seconds: 5));
+        await response.stream.drain();
+        client.close();
+        
+        globalTalker.info('[BackgroundPlaybackHelper] 网络连接预热成功');
+      } catch (e) {
+        globalTalker.warning('[BackgroundPlaybackHelper] 网络连接预热失败: $e');
+      }
+    });
   }
 
   /// 检查是否在后台
@@ -282,5 +328,108 @@ class BackgroundPlaybackHelper {
   void dispose() {
     _backgroundOptimizationTimer?.cancel();
     _backgroundOptimizationTimer = null;
+  }
+}
+
+/// Android平台后台播放监控器
+/// 专门监控和优化Android平台的后台播放性能
+class AndroidBackgroundPlaybackMonitor {
+  static final AndroidBackgroundPlaybackMonitor _instance = AndroidBackgroundPlaybackMonitor._internal();
+  factory AndroidBackgroundPlaybackMonitor() => _instance;
+  AndroidBackgroundPlaybackMonitor._internal();
+
+  Timer? _monitorTimer;
+  bool _isMonitoring = false;
+  
+  // 监控配置
+  static const Duration _monitorInterval = Duration(seconds: 30);
+  static const int _maxConsecutiveErrors = 3;
+  
+  int _consecutiveErrors = 0;
+  DateTime? _lastErrorTime;
+  
+  /// 启动后台播放监控
+  void startMonitoring() {
+    if (!Platform.isAndroid) return;
+    
+    if (_isMonitoring) return;
+    
+    _isMonitoring = true;
+    _monitorTimer = Timer.periodic(_monitorInterval, _checkPlaybackHealth);
+    
+    globalTalker.info('[AndroidBackgroundPlaybackMonitor] 启动后台播放监控');
+  }
+  
+  /// 停止后台播放监控
+  void stopMonitoring() {
+    if (!_isMonitoring) return;
+    
+    _isMonitoring = false;
+    _monitorTimer?.cancel();
+    _monitorTimer = null;
+    
+    globalTalker.info('[AndroidBackgroundPlaybackMonitor] 停止后台播放监控');
+  }
+  
+  /// 检查播放健康状态
+  void _checkPlaybackHealth(Timer timer) {
+    if (!_isMonitoring) return;
+    
+    final backgroundHelper = BackgroundPlaybackHelper();
+    if (!backgroundHelper.isInBackground) return;
+    
+    // 检查是否有连续的错误
+    if (_consecutiveErrors >= _maxConsecutiveErrors) {
+      globalTalker.warning('[AndroidBackgroundPlaybackMonitor] 检测到连续播放错误，执行恢复操作');
+      _performRecoveryActions();
+    }
+  }
+  
+  /// 记录播放错误
+  void recordPlaybackError() {
+    _consecutiveErrors++;
+    _lastErrorTime = DateTime.now();
+    
+    globalTalker.warning('[AndroidBackgroundPlaybackMonitor] 记录播放错误，连续错误次数: $_consecutiveErrors');
+    
+    // 如果错误次数过多，立即执行恢复操作
+    if (_consecutiveErrors >= _maxConsecutiveErrors) {
+      _performRecoveryActions();
+    }
+  }
+  
+  /// 记录播放成功
+  void recordPlaybackSuccess() {
+    _consecutiveErrors = 0;
+    _lastErrorTime = null;
+  }
+  
+  /// 执行恢复操作
+  void _performRecoveryActions() {
+    globalTalker.info('[AndroidBackgroundPlaybackMonitor] 执行播放恢复操作');
+    
+    // 重置网络状态
+    NetworkStabilityHelper().reset();
+    
+    // 清理播放错误记录
+    AudioPlaybackRecoveryHelper().cleanupOldErrors();
+    
+    // 重置错误计数
+    _consecutiveErrors = 0;
+    _lastErrorTime = null;
+    
+    // 预热网络连接
+    final backgroundHelper = BackgroundPlaybackHelper();
+    backgroundHelper.markDidEnterBackground(); // 触发网络预热
+  }
+  
+  /// 获取监控状态
+  Map<String, dynamic> getMonitoringStatus() {
+    return {
+      'isMonitoring': _isMonitoring,
+      'consecutiveErrors': _consecutiveErrors,
+      'lastErrorTime': _lastErrorTime?.toIso8601String(),
+      'isAndroid': Platform.isAndroid,
+    };
   }
 }

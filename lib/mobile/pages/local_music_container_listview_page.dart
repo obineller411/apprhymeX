@@ -19,6 +19,7 @@ import 'package:app_rhyme/utils/music_api_helper.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:pull_down_button/pull_down_button.dart';
+import 'package:app_rhyme/mobile/pages/play_display_page.dart';
 
 // 用于执行更改本地歌单内的操作后直接刷新整个歌单页面，由于使用了 ValueKey，过渡自然
 Future<void> Function() globalMobileMusicContainerListPageRefreshFunction =
@@ -43,32 +44,36 @@ class LocalMusicContainerListPageState
   late MusicListW musicListW;
   late MusicListInfo musicListInfo;
   List<MusicContainer> _musicContainers = [];
+  bool _isLoading = true; // 初始状态为加载
 
   @override
   void initState() {
+    super.initState();
     WidgetsBinding.instance.addObserver(this);
     musicListW = widget.musicList;
     musicListInfo = musicListW.getMusiclistInfo();
-    
     // 设置全局的更新函数
     globalMobileMusicContainerListPageRefreshFunction = () async {
       developer.log('[RefreshFunction] Starting refresh...', name: 'LocalMusicContainerListPage');
       var musicLists = await SqlFactoryW.getAllMusiclists();
-      setState(() {
-        musicListW = musicLists
-            .singleWhere((ml) => ml.getMusiclistInfo().id == musicListInfo.id);
-        musicListInfo = musicListW.getMusiclistInfo();
-      });
+      if (mounted) {
+        setState(() {
+          musicListW = musicLists.singleWhere(
+              (ml) => ml.getMusiclistInfo().id == musicListInfo.id);
+          musicListInfo = musicListW.getMusiclistInfo();
+        });
+      }
       developer.log('[RefreshFunction] MusicList updated, reloading songs...', name: 'LocalMusicContainerListPage');
       _loadMusicContainers();
     };
     globalMusicContainerListPagePopFunction = () {
       Navigator.pop(context);
     };
-    
-    // 加载所有歌曲
-    _loadMusicContainers();
-    super.initState();
+
+    // 初始加载所有歌曲
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadMusicContainers();
+    });
   }
 
   @override
@@ -90,30 +95,28 @@ class LocalMusicContainerListPageState
   Future<void> _loadMusicContainers() async {
     try {
       developer.log('[LoadMusicContainers] Starting to load all songs...', name: 'LocalMusicContainerListPage');
-      
-      // 获取所有歌曲
-      var allAggs = await SqlFactoryW.getAllMusics(musiclistInfo: musicListInfo);
-      developer.log('[LoadMusicContainers] Total songs in database: ${allAggs.length}', name: 'LocalMusicContainerListPage');
-      
-      // 检查是否有重复的音乐ID
-      var musicIds = allAggs.map((agg) => agg.getMusicId()).toSet();
-      developer.log('[LoadMusicContainers] Unique music IDs count: ${musicIds.length}', name: 'LocalMusicContainerListPage');
-      developer.log('[LoadMusicContainers] Duplicate count: ${allAggs.length - musicIds.length}', name: 'LocalMusicContainerListPage');
-      
-      // 记录所有音乐ID以便调试
-      if (allAggs.length > 0) {
-        developer.log('[LoadMusicContainers] All music IDs: ${allAggs.map((agg) => agg.getMusicId()).toList()}', name: 'LocalMusicContainerListPage');
+
+      // 使用 fetchAllMusicAggregators 获取歌曲
+      var allAggs = await musicListW.fetchAllMusicAggregators(pagesPerBatch: 1, limit: 999, withLyric: false);
+      developer.log('[LoadMusicContainers] Total songs from fetch: ${allAggs.length}', name: 'LocalMusicContainerListPage');
+
+      // 转换为MusicContainer列表并更新UI
+      if (mounted) {
+        setState(() {
+          _musicContainers = allAggs.map((a) => MusicContainer(a)).toList();
+          _isLoading = false; // 加载完成时设置非加载状态
+        });
       }
-      
-      // 转换为MusicContainer列表
-      setState(() {
-        _musicContainers = allAggs.map((a) => MusicContainer(a)).toList();
-      });
-      
+
       developer.log('[LoadMusicContainers] Loaded ${_musicContainers.length} songs', name: 'LocalMusicContainerListPage');
     } catch (e) {
       LogToast.error("加载歌曲列表", "加载歌曲列表失败!:$e",
           "[_loadMusicContainers] Failed to load music list: $e");
+      if (mounted) {
+        setState(() {
+          _isLoading = false; // 发生错误时也设置非加载状态
+        });
+      }
     }
   }
 
@@ -155,54 +158,6 @@ class LocalMusicContainerListPageState
       child: CustomScrollView(
         slivers: <Widget>[
           SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.only(
-                  top: 10, left: screenWidth * 0.15, right: screenWidth * 0.15),
-              child: Container(
-                constraints: BoxConstraints(
-                  maxWidth: screenWidth * 0.7,
-                ),
-                child: MusicListImageCard(
-                  musicListW: musicListW,
-                  online: false,
-                ),
-              ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  buildButton(
-                    context,
-                    icon: CupertinoIcons.play_fill,
-                    label: '播放',
-                    onPressed: () {
-                      // 获取所有音乐容器用于播放
-                      if (_musicContainers.isNotEmpty) {
-                        globalAudioHandler.clearReplaceMusicAll(_musicContainers);
-                      }
-                    },
-                  ),
-                  buildButton(
-                    context,
-                    icon: Icons.shuffle,
-                    label: '随机播放',
-                    onPressed: () {
-                      // 获取所有音乐容器用于随机播放
-                      if (_musicContainers.isNotEmpty) {
-                        globalAudioHandler
-                            .clearReplaceMusicAll(shuffleList(_musicContainers));
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-          SliverToBoxAdapter(
             child: Center(
               child: SizedBox(
                 width: screenWidth * 0.85,
@@ -213,48 +168,120 @@ class LocalMusicContainerListPageState
               ),
             ),
           ),
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                final container = _musicContainers[index];
-                bool isFirst = index == 0;
-                bool isLastItem = index == _musicContainers.length - 1;
-
-                return Column(
+          if (_isLoading)
+            const SliverFillRemaining(
+              child: Center(
+                child: CupertinoActivityIndicator(radius: 20.0),
+              ),
+            )
+          else ...[
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.only(
+                    top: 10,
+                    left: screenWidth * 0.15,
+                    right: screenWidth * 0.15),
+                child: Container(
+                  constraints: BoxConstraints(
+                    maxWidth: screenWidth * 0.7,
+                  ),
+                  child: MusicListImageCard(
+                    musicListW: musicListW,
+                    online: false,
+                  ),
+                ),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    if (isFirst)
-                      const Padding(padding: EdgeInsets.only(top: 5)),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 5, bottom: 5),
-                      child: MusicContainerListItem(
-                        key: ValueKey(
-                            '${container.info.id}_${container.info.source}'),
-                        musicContainer: container,
-                        musicListW: musicListW,
-                        cachePic: globalConfig.savePicWhenAddMusicList,
-                      ),
+                    buildButton(
+                      context,
+                      icon: CupertinoIcons.play_fill,
+                      label: '播放',
+                      onPressed: () {
+                        // 获取所有音乐容器用于播放
+                        if (_musicContainers.isNotEmpty) {
+                          globalAudioHandler
+                              .clearReplaceMusicAll(_musicContainers);
+                          // 播放按钮不应直接跳转到播放页
+                        }
+                      },
                     ),
-                    if (!isLastItem)
-                      Center(
-                        child: SizedBox(
-                          width: screenWidth * 0.85,
-                          child: Divider(
-                            color: dividerColor,
-                            height: 0.5,
-                          ),
-                        ),
-                      )
+                    buildButton(
+                      context,
+                      icon: Icons.shuffle,
+                      label: '随机播放',
+                      onPressed: () {
+                        // 获取所有音乐容器用于随机播放
+                        if (_musicContainers.isNotEmpty) {
+                          globalAudioHandler.clearReplaceMusicAll(
+                              shuffleList(_musicContainers));
+                          // 随机播放按钮不应直接跳转到播放页
+                        }
+                      },
+                    ),
                   ],
-                );
-              },
-              childCount: _musicContainers.length,
+                ),
+              ),
             ),
-          ),
-          const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.only(top: 200),
+            SliverToBoxAdapter(
+              child: Center(
+                child: SizedBox(
+                  width: screenWidth * 0.85,
+                  child: Divider(
+                    color: dividerColor,
+                    height: 0.5,
+                  ),
+                ),
+              ),
             ),
-          ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final container = _musicContainers[index];
+                  bool isFirst = index == 0;
+                  bool isLastItem = index == _musicContainers.length - 1;
+
+                  return Column(
+                    children: [
+                      if (isFirst)
+                        const Padding(padding: EdgeInsets.only(top: 5)),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 5, bottom: 5),
+                        child: MusicContainerListItem(
+                          key: ValueKey(
+                              '${container.info.id}_${container.info.source}'),
+                          musicContainer: container,
+                          musicListW: musicListW,
+                          cachePic: globalConfig.savePicWhenAddMusicList,
+                        ),
+                      ),
+                      if (!isLastItem)
+                        Center(
+                          child: SizedBox(
+                            width: screenWidth * 0.85,
+                            child: Divider(
+                              color: dividerColor,
+                              height: 0.5,
+                            ),
+                          ),
+                        )
+                    ],
+                  );
+                },
+                childCount: _musicContainers.length,
+              ),
+            ),
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.only(top: 200),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -353,4 +380,14 @@ class LocalMusicListChoicMenu extends StatelessWidget {
       buttonBuilder: builder,
     );
   }
+}
+
+void navigateToSongDisplayPage(BuildContext context) {
+  Navigator.of(context).push(
+    CupertinoPageRoute(
+      builder: (context) => const SongDisplayPage(),
+      fullscreenDialog: true,
+      maintainState: true,
+    ),
+  );
 }

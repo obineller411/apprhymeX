@@ -1,3 +1,4 @@
+import 'dart:async'; // 导入Timer
 import 'dart:io';
 import 'package:app_rhyme/src/rust/api/bind/mirrors.dart';
 import 'package:app_rhyme/utils/log_toast.dart';
@@ -12,6 +13,7 @@ import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:synchronized/synchronized.dart';
+import 'package:app_rhyme/utils/color_extraction.dart';
 
 // 全局 CustomAudioHandler 实例
 CustomAudioHandler? globalCustomAudioHandler;
@@ -39,11 +41,11 @@ Future<void> initGlobalAudioHandler() async {
         globalCustomAudioHandler = CustomAudioHandler();
         await AudioService.init(
           builder: () => globalCustomAudioHandler!,
-          config: const AudioServiceConfig(
+          config: AudioServiceConfig(
             androidNotificationChannelId: 'com.ryanheise.bg_demo.channel.audio',
             androidNotificationChannelName: 'Audio playback',
-            androidNotificationOngoing: false,
-            androidStopForegroundOnPause: true,
+            androidNotificationOngoing: false, // 恢复通知栏显示
+            androidStopForegroundOnPause: true, // 暂停时停止前台服务
             notificationColor: Color(0xFF2196F3),
             androidNotificationIcon: 'mipmap/ic_launcher',
           ),
@@ -75,8 +77,9 @@ class AudioHandler extends GetxController {
   final AudioPlayer player = AudioPlayer();
   final RxList<MusicContainer> musicList = RxList<MusicContainer>([]);
   final Rx<MusicContainer?> playingMusic = Rx<MusicContainer?>(null);
+  final Rx<LinearGradient> currentBackgroundGradient = ColorExtractor.defaultGradient.obs; // Add this line
   final ConcatenatingAudioSource audioSourceList =
-      ConcatenatingAudioSource(children: []);
+       ConcatenatingAudioSource(children: []);
   final audioSourceListLock = Lock();
   
   // 用于防止在懒加载过程中重复触发 updatePlayingMusic
@@ -84,6 +87,9 @@ class AudioHandler extends GetxController {
 
   // 记录播放失败的次数，超过3次则暂停播放
   int allowFailedTimes = 3;
+  Timer? _preloadTimer; // 用于节流预加载
+  static const _preloadDelay = Duration(milliseconds: 300); // 预加载节流延迟
+
   AudioHandler() {
     _init();
   }
@@ -103,6 +109,29 @@ class AudioHandler extends GetxController {
         final musicId = playingMusic.value!.extra ?? playingMusic.value!.info.name;
         AudioPlaybackRecoveryHelper().recordPlaybackError(musicId);
         
+        // Android平台特殊错误处理
+        if (Platform.isAndroid) {
+          // 记录到Android监控器
+          AndroidBackgroundPlaybackMonitor().recordPlaybackError();
+          
+          // 增强的错误处理：识别PlatformException并采取针对性措施
+          if (e.toString().contains('PlatformException') && e.toString().contains('Source error')) {
+            globalTalker.warning('[Audio Handler] 检测到音频源错误，尝试重新加载音频源');
+            
+            // 尝试重新加载当前音频源
+            if (player.currentIndex != null && player.currentIndex! < musicList.length) {
+              final currentIndex = player.currentIndex!;
+              Future.delayed(const Duration(milliseconds: 500), () async {
+                if (isPlaying) {
+                  await pause();
+                  await tryLazyLoadMusic(currentIndex, force: true);
+                  play();
+                }
+              });
+            }
+          }
+        }
+        
         // 如果错误次数过多，跳过当前音乐
         if (AudioPlaybackRecoveryHelper().shouldSkipMusic(musicId)) {
           globalTalker.info('[Audio Handler] 音乐 $musicId 错误次数过多，自动跳过');
@@ -118,32 +147,8 @@ class AudioHandler extends GetxController {
     // 监听播放状态变化以同步通知栏
     player.playbackEventStream.listen((event) {
       if (globalCustomAudioHandler != null) {
-        globalCustomAudioHandler!.playbackState.add(PlaybackState(
-          controls: [
-            if (player.playing) MediaControl.pause else MediaControl.play,
-            MediaControl.skipToPrevious,
-            MediaControl.skipToNext,
-          ],
-          systemActions: const {
-            // 只展示同步进度，不启用拖动按钮
-            // MediaAction.seek,
-            // MediaAction.seekForward,
-            // MediaAction.seekBackward,
-          },
-          androidCompactActionIndices: const [0, 1, 2],
-          processingState: const {
-            ProcessingState.idle: AudioProcessingState.idle,
-            ProcessingState.loading: AudioProcessingState.loading,
-            ProcessingState.buffering: AudioProcessingState.buffering,
-            ProcessingState.ready: AudioProcessingState.ready,
-            ProcessingState.completed: AudioProcessingState.completed,
-          }[player.processingState] ?? AudioProcessingState.idle,
-          playing: player.playing,
-          updatePosition: player.position,
-          bufferedPosition: player.bufferedPosition,
-          speed: player.speed,
-          queueIndex: player.currentIndex,
-        ));
+        // 直接将主播放器的事件传递给 CustomAudioHandler
+        globalCustomAudioHandler!.onPlaybackEvent(event);
       }
     });
 
@@ -225,11 +230,42 @@ class AudioHandler extends GetxController {
       // 确保同时只有一个LazyLoad运行
       await lazyLoadLock.synchronized(() async {
         var current = player.currentIndex;
+        
+        // Android平台后台播放优化
+        if (Platform.isAndroid) {
+          // 检查应用是否在后台
+          final backgroundHelper = BackgroundPlaybackHelper();
+          if (backgroundHelper.isInBackground) {
+            globalTalker.info('[Music Handler] Android后台播放优化：延长网络请求延迟');
+            await Future.delayed(const Duration(milliseconds: 1000));
+          }
+        }
+        
         // 获取智能延迟策略
         final delay = NetworkStabilityHelper().getSmartDelay();
         await Future.delayed(delay);
 
-        if (!await musicList[index].updateAll(quality)) {
+        // Android平台重试机制
+        bool updateSuccess = false;
+        int maxRetries = Platform.isAndroid ? 2 : 1;
+        
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            updateSuccess = await musicList[index].updateAll(quality);
+            if (updateSuccess) break;
+            
+            if (attempt < maxRetries) {
+              globalTalker.info('[Music Handler] Android重试机制：第$attempt次更新失败，准备重试');
+              await Future.delayed(const Duration(milliseconds: 1000));
+            }
+          } catch (e) {
+            globalTalker.warning('[Music Handler] Android重试机制：第$attempt次更新异常: $e');
+            if (attempt == maxRetries) rethrow;
+            await Future.delayed(const Duration(milliseconds: 1000));
+          }
+        }
+
+        if (!updateSuccess) {
           globalTalker.info(
               "[Music Handler] LazyLoad Music Failed to updateAudioSource: ${musicList[index].info.name}");
           
@@ -239,26 +275,35 @@ class AudioHandler extends GetxController {
           
           return;
         }
+        
+        // 如果当前懒加载的歌曲是正在播放的歌曲，则强制更新 playingMusic
+        // 确保 LyricDisplay 能够接收到更新后的歌词信息
+        if (player.currentIndex == index) {
+          updatePlayingMusic(music: musicList[index]);
+        }
+        
         // 先将播放器暂停下来
         if (player.playing) await pause();
+        
         // 确保音频资源不会被两个并发函数同时使用
         await audioSourceListLock.synchronized(() async {
-          if (audioSourceListLock.inLock) {
+          try {
             await audioSourceList.clear();
             await audioSourceList
                 .addAll(musicList.map((e) => e.audioSource).toList());
-          } else {
-            await audioSourceListLock.synchronized(() async {
-              await audioSourceList.clear();
-              await audioSourceList
-                  .addAll(musicList.map((e) => e.audioSource).toList());
-            });
+            
+            // 更新音频资源后恢复原来的播放状态
+            await player.seek(Duration.zero, index: current);
+            play();
+            globalTalker.info(
+                "[Music Hanlder] LazyLoad Music Succeed: ${musicList[index].info.name}");
+          } catch (e) {
+            globalTalker.error('[Music Handler] 音频源列表更新失败: $e');
+            // 如果更新失败，重新初始化音频源列表
+            await audioSourceList.clear();
+            await audioSourceList
+                .addAll(musicList.map((e) => e.audioSource).toList());
           }
-          // 更新音频资源后恢复原来的播放状态
-          await player.seek(Duration.zero, index: current);
-          play();
-          globalTalker.info(
-              "[Music Hanlder] LazyLoad Music Succeed: ${musicList[index].info.name}");
         });
       });
     } catch (e) {
@@ -452,11 +497,9 @@ class AudioHandler extends GetxController {
     }
   }
 
-  void play() async {
+  Future<void> play() async {
     try {
-      // 直接运行在某些平台会导致完全无理由的中断后续代码执行，甚至没有任何报错或者返回(当然也不是阻塞)
-      Future.microtask(() => player.play());
-      // globalTalker.info("[Music Handler] In play, succeed");
+      await player.play();
     } catch (e) {
       globalTalker.error("[Music Handler] In play. error occur: $e");
     }
@@ -509,6 +552,28 @@ class AudioHandler extends GetxController {
     // 允许更新相同的音乐，确保时长信息能正确更新
     playingMusic.value = newMusic;
     
+    // Update current background gradient immediately
+    final currentArtPic = playingMusic.value?.info.artPic;
+    final cachedGradient = ColorExtractor.getCachedGradient(currentArtPic);
+    if (cachedGradient != null) {
+      currentBackgroundGradient.value = cachedGradient;
+    } else {
+      // If not cached, initiate extraction and update
+      ColorExtractor.extractAndCacheGradient(currentArtPic, cacheKey: currentArtPic)
+          .then((gradient) {
+            currentBackgroundGradient.value = gradient;
+          })
+          .catchError((error) {
+            globalTalker.warning("[Audio Handler] 更新当前播放音乐颜色失败: $error");
+          });
+    }
+
+    // 预加载相邻音乐的颜色信息 (节流处理)
+    _preloadTimer?.cancel();
+    _preloadTimer = Timer(_preloadDelay, () {
+      preloadColorsForAdjacentMusics();
+    });
+
     // 同步到 CustomAudioHandler
     if (globalCustomAudioHandler != null && playingMusic.value != null) {
       Uri? artUri;
@@ -549,6 +614,57 @@ class AudioHandler extends GetxController {
     globalTalker.info(
         "[Music Handler] Succeed to updatePlayingMusic:  [${playingMusic.value?.info.source ?? "No music"}]${playingMusic.value?.info.name ?? "No music"}");
     update();
+  }
+
+  /// 预加载相邻音乐的颜色信息
+  void preloadColorsForAdjacentMusics() {
+    if (musicList.isEmpty || player.currentIndex == null) {
+      return;
+    }
+
+    final currentIndex = player.currentIndex!;
+
+    // 异步预加载上一首音乐的颜色
+    if (currentIndex > 0 && currentIndex - 1 < musicList.length) {
+      final previousMusic = musicList[currentIndex - 1];
+      if (previousMusic.info.artPic != null && previousMusic.info.artPic!.isNotEmpty) {
+        // 异步执行，不阻塞主线程
+        Future.microtask(() async {
+          final gradient = await ColorExtractor.extractAndCacheGradient(
+            previousMusic.info.artPic,
+            cacheKey: previousMusic.info.artPic
+          );
+          // Only update currentBackgroundGradient if previous music is now playing
+          if (player.currentIndex == currentIndex - 1) {
+            currentBackgroundGradient.value = gradient;
+          }
+          globalTalker.info("[Audio Handler] 预加载上一首音乐颜色完成: ${previousMusic.info.name}");
+        }).catchError((error) {
+          globalTalker.warning("[Audio Handler] 预加载上一首音乐颜色失败: ${previousMusic.info.name}, 错误: $error");
+        });
+      }
+    }
+
+    // 异步预加载下一首音乐的颜色
+    if (currentIndex + 1 < musicList.length) {
+      final nextMusic = musicList[currentIndex + 1];
+      if (nextMusic.info.artPic != null && nextMusic.info.artPic!.isNotEmpty) {
+        // 异步执行，不阻塞主线程
+        Future.microtask(() async {
+          final gradient = await ColorExtractor.extractAndCacheGradient(
+            nextMusic.info.artPic,
+            cacheKey: nextMusic.info.artPic
+          );
+          // Only update currentBackgroundGradient if next music is now playing
+          if (player.currentIndex == currentIndex + 1) {
+            currentBackgroundGradient.value = gradient;
+          }
+          globalTalker.info("[Audio Handler] 预加载下一首音乐颜色完成: ${nextMusic.info.name}");
+        }).catchError((error) {
+          globalTalker.warning("[Audio Handler] 预加载下一首音乐颜色失败: ${nextMusic.info.name}, 错误: $error");
+        });
+      }
+    }
   }
 
   bool get isPlaying {
@@ -617,43 +733,32 @@ class AudioUiController extends GetxController {
 
 // 自定义 AudioHandler 实现，用于移除通知栏的结束按钮
 class CustomAudioHandler extends BaseAudioHandler {
-  final AudioPlayer _player = AudioPlayer();
-  
+  // 不再需要独立的播放器实例
+  // final AudioPlayer _player = AudioPlayer();
+
   CustomAudioHandler() {
-    _init();
+    // _init() 方法不再需要，因为我们直接从外部接收事件
   }
 
-  void _init() {
-    // 监听播放状态变化
-    _player.playbackEventStream.listen((event) {
-      playbackState.add(_transformEvent(event));
-    });
-
-    // 监听时长变化，直接更新mediaItem的duration
-    _player.durationStream.listen((duration) {
-      if (mediaItem.value != null && duration != null) {
-        mediaItem.add(mediaItem.value!.copyWith(duration: duration));
-      }
-    });
-
+  /// 由主 AudioHandler 调用，以传递播放事件
+  void onPlaybackEvent(PlaybackEvent event) {
+    playbackState.add(_transformEvent(event));
   }
 
   // 转换播放状态
   PlaybackState _transformEvent(PlaybackEvent event) {
+    final player = globalAudioHandler.player; // 直接引用主播放器
     return PlaybackState(
       controls: [
-        // 只包含播放、暂停、上一首、下一首按钮，移除停止按钮
-        if (_player.playing) MediaControl.pause else MediaControl.play,
+        if (player.playing) MediaControl.pause else MediaControl.play,
         MediaControl.skipToPrevious,
         MediaControl.skipToNext,
-        // 不包含 MediaControl.stop
       ],
+      // 启用 seek，让进度条可以拖动
       systemActions: const {
-        // 只展示同步进度，不启用拖动按钮
-        // MediaAction.seek,
-        // MediaAction.seekForward,
-        // MediaAction.seekBackward,
-        // 不包含 MediaAction.stop
+        MediaAction.seek,
+        MediaAction.seekForward,
+        MediaAction.seekBackward,
       },
       androidCompactActionIndices: const [0, 1, 2],
       processingState: const {
@@ -662,63 +767,51 @@ class CustomAudioHandler extends BaseAudioHandler {
         ProcessingState.buffering: AudioProcessingState.buffering,
         ProcessingState.ready: AudioProcessingState.ready,
         ProcessingState.completed: AudioProcessingState.completed,
-      }[_player.processingState] ?? AudioProcessingState.idle,
-      playing: _player.playing,
-      updatePosition: _player.position,
-      bufferedPosition: _player.bufferedPosition,
-      speed: _player.speed,
-      queueIndex: _player.currentIndex,
+      }[player.processingState] ??
+          AudioProcessingState.idle,
+      playing: player.playing,
+      updatePosition: player.position, // 使用主播放器的位置
+      bufferedPosition: player.bufferedPosition,
+      speed: player.speed,
+      queueIndex: player.currentIndex,
     );
   }
 
 
   @override
   Future<void> play() async {
-    // 同时控制主要的 AudioHandler
-    globalAudioHandler.play();
-    await _player.play();
+    await globalAudioHandler.play();
   }
 
   @override
   Future<void> pause() async {
-    // 同时控制主要的 AudioHandler
     await globalAudioHandler.pause();
-    await _player.pause();
   }
 
   @override
   Future<void> seek(Duration position) async {
-    // 先控制主要的 AudioHandler
     await globalAudioHandler.seek(position);
-    // 然后控制自定义播放器
-    await _player.seek(position);
-    // 注意：不要在这里手动更新 mediaItem，让播放器的监听器自动处理
   }
 
   @override
   Future<void> skipToNext() async {
-    // 同时控制主要的 AudioHandler
     await globalAudioHandler.seekToNext();
-    await _player.seekToNext();
   }
 
   @override
   Future<void> skipToPrevious() async {
-    // 同时控制主要的 AudioHandler
     await globalAudioHandler.seekToPrevious();
-    await _player.seekToPrevious();
   }
 
   @override
   Future<void> stop() async {
     // 重写 stop 方法，不实际停止播放器，只是暂停
     await globalAudioHandler.pause();
-    await _player.pause();
     await super.stop();
   }
 
   @override
   Future<void> setSpeed(double speed) async {
-    await _player.setSpeed(speed);
+    await globalAudioHandler.player.setSpeed(speed);
   }
 }
